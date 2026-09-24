@@ -1,0 +1,54 @@
+/// Fan-out / fan-in with tasks and channels.
+
+fn is_prime(n: Int) -> Bool {
+    if n < 2 {
+        return false
+    }
+    var d = 2
+    while d * d <= n {
+        if n % d == 0 {
+            return false
+        }
+        d += 1
+    }
+    return true
+}
+
+/// Counts primes in [lo, hi).
+fn count_primes(lo: Int, hi: Int) -> Int {
+    var n = 0
+    for i in lo..hi {
+        if is_prime(i) {
+            n += 1
+        }
+    }
+    return n
+}
+
+fn producer(out: Chan[Int], count: Int) {
+    for i in 0..count {
+        out.send(i * i)
+    }
+    out.close()
+}
+
+fn main() -> ! {
+    var tasks: List[Task[Int]] = []
+    for chunk in 0..4 {
+        tasks.push(spawn count_primes(chunk * 5000, hi: (chunk + 1) * 5000))
+    }
+    let counts = try wait_all(tasks)
+    print("primes below 20000 per chunk: ${counts}, total ${counts.sum()}")
+
+    let ch = chan(8)
+    spawn producer(ch, count: 10)
+    var total = 0
+    for v in ch {
+        total += v
+    }
+    print("sum of squares 0..9: ${total}")
+}
+
+test "primes" {
+    assert count_primes(0, hi: 100) == 25
+}

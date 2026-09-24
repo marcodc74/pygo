@@ -1,0 +1,68 @@
+# Deploys the image built from deploy/Dockerfile (default app: examples/server.pg).
+#   kubectl apply -f deploy/k8s/
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pygo-app
+  labels:
+    app: pygo-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pygo-app
+  template:
+    metadata:
+      labels:
+        app: pygo-app
+    spec:
+      terminationGracePeriodSeconds: 20   # http.serve drains connections on SIGTERM (10s)
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: pygo-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pygo-app
+spec:
+  selector:
+    app: pygo-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

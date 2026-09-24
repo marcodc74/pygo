@@ -140,45 +140,83 @@ Esempio di diagnostica (`pygo check --json`):
   `rand`. Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
   Pygo stesso: sono l'unica fonte di verità per checker, runtime e documentazione.
 
+## Deploy: ogni sistema operativo, Docker, Kubernetes
+
+```sh
+make dist        # binari statici in dist/: linux, darwin, windows × amd64, arm64
+./pygo build --allow net,env -o server examples/server.pg      # un solo eseguibile autonomo
+./pygo build --runtime dist/pygo-windows-amd64.exe -o app.exe app.pg   # build per un altro OS
+
+docker build -f deploy/Dockerfile -t pygo-app .                    # immagine dell'app (16 MB, distroless, non-root)
+docker build -f deploy/Dockerfile --build-arg APP=mio.pg --build-arg ALLOW=net -t mia-app .
+docker build -f deploy/Dockerfile --target toolchain -t pygo .     # immagine con la CLI
+
+kubectl apply -f deploy/k8s/deployment.yaml     # Deployment + Service, probe su /healthz
+```
+
+- **Build dell'immagine:** la build Docker esegue `check` e `test` sul programma. Un programma che non passa i controlli non diventa un'immagine.
+- **Shutdown:** `http.serve` chiude le connessioni in modo pulito su SIGTERM, come serve per i rolling update di Kubernetes.
+- **Log:** `log.info(...)` scrive una riga JSON su stderr, pronta per i raccoglitori di log.
+- **Sandbox per codice generato da IA:** `deploy/k8s/job-sandbox.yaml` esegue il programma
+  - senza capability Pygo;
+  - con budget di passi e timeout;
+  - con filesystem in sola lettura;
+  - con una NetworkPolicy che blocca tutto il traffico.
+
+  Un ciclo infinito termina con un report JSON (`R0011`) e l'accesso a file o rete senza permesso termina con exit 4.
+
+## Documentazione
+
+- [`docs/SPEC.md`](docs/SPEC.md): specifica completa del linguaggio.
+- [`docs/GUIDE.md`](docs/GUIDE.md): guida compatta da mettere nel contesto di un modello (`pygo guide`).
+- `pygo explain` spiega tutti i codici diagnostici (E/W) e runtime (R).
+
+Le due guide sono in inglese: costano meno token e sono la lingua più rappresentata nei dati di addestramento dei modelli.
+
 ## Architettura
 
 ```
 cmd/pygo/           CLI
 internal/lexer      token, terminatori automatici, interpolazione ${...}
 internal/parser     parser a discesa ricorsiva con recupero dagli errori
-internal/ast        AST e visitor
+internal/ast        AST, visitor, export JSON
 internal/sig        firme della stdlib (file .pg incorporati nel binario)
-internal/check      checker statico: nomi, tipi, fallibilità, effetti, nil, esaustività
+internal/check      checker statico: nomi, tipi, fallibilità, effetti, nil, esaustività, correzioni
 internal/interp     interprete, valori thread-safe, stdlib, goroutine per spawn/chan
-internal/printer    stampa canonica dell'AST (base di pygo fmt)
+internal/printer    stampa canonica dell'AST (pygo fmt)
 internal/loader     moduli locali (import "./x"), cicli, bundle
+internal/guide      guida compatta per il contesto dei modelli
+deploy/             Dockerfile, manifest Kubernetes
+examples/           hello, errors, concurrency, server (HTTP), wordcount (CLI su file)
 ```
 
 ## Stato
 
-Il progetto è in sviluppo attivo (v0.1).
+v0.1.
 
-**Fatto e testato**:
-- linguaggio completo, con lexer, parser, checker statico e interprete;
-- stdlib descritta sopra;
-- concorrenza;
-- contratti e test inline;
-- capability con `--allow`;
-- budget di passi e timeout;
-- tutti i comandi della CLI elencati sopra.
+**Fatto e testato:**
+- **Linguaggio e checker:** linguaggio completo, checker statico, interprete, stdlib e concorrenza.
+- **Strumenti per agenti:** tutti i comandi della CLI elencati sopra.
+- **Distribuzione:** cross-compilazione per 6 piattaforme.
+- **Docker:** immagini costruite e provate (l'app risponde, lo shutdown è pulito, la sandbox blocca cicli infiniti e permessi mancanti).
+- **Kubernetes:** i manifest sono sintatticamente validi, ma non li ho applicati a un cluster reale.
+- **Test:** unit test, test golden sugli esempi e race detector passano.
+- **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
-**In corso**:
-- Dockerfile e manifest Kubernetes;
-- Makefile per la cross-compilazione (Linux/macOS/Windows × amd64/arm64);
-- CI GitHub Actions;
-- specifica completa in `docs/`;
-- altri esempi (server HTTP, concorrenza).
-
-**Roadmap**: backend compilato (Go/WASM), trait/interfacce, `select`, LSP,
-package manager, record/replay degli effetti.
+**Roadmap:**
+- backend compilato (generazione di Go/WASM);
+- trait e interfacce;
+- `select` su più canali;
+- effetti per le funzioni di ordine superiore;
+- LSP;
+- package manager;
+- record/replay degli effetti;
+- conservare i commenti normali in `fmt`.
 
 ## Sviluppo
 
 ```sh
-go vet ./... && go test ./...
+make test     # vet + gofmt + unit test + test degli esempi
+make race     # race detector
+make dist     # cross-compilazione
 ```

@@ -1,0 +1,55 @@
+# Runs untrusted, AI-generated Pygo code in a locked-down Job:
+# no capabilities granted (no fs/net/env/proc), bounded steps and time,
+# non-root, read-only filesystem, no network via NetworkPolicy.
+#   kubectl create configmap agent-code --from-file=main.pg=./main.pg
+#   kubectl apply -f deploy/k8s/job-sandbox.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pygo-sandbox
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 60
+  template:
+    metadata:
+      labels:
+        app: pygo-sandbox
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: run
+          image: pygo:latest   # docker build -f deploy/Dockerfile --target toolchain -t pygo .
+          imagePullPolicy: IfNotPresent
+          args: ["run", "--json", "--max-steps", "10000000", "--timeout", "30s", "/code/main.pg"]
+          volumeMounts:
+            - name: code
+              mountPath: /code
+              readOnly: true
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: code
+          configMap:
+            name: agent-code
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pygo-sandbox-deny-all
+spec:
+  podSelector:
+    matchLabels:
+      app: pygo-sandbox
+  policyTypes: ["Ingress", "Egress"]

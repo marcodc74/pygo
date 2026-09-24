@@ -88,8 +88,19 @@ func main() {
 }
 
 func printJSON(v any) {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	fmt.Println(string(b))
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	enc.Encode(v)
+}
+
+// compactJSON renders v on one line without HTML escaping.
+func compactJSON(v any) string {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.Encode(v)
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // load parses and checks a program; ok=false if there are errors.
@@ -194,8 +205,7 @@ func cmdRun(args []string) int {
 	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs})
 	res := in.Run()
 	if *asJSON {
-		b, _ := json.Marshal(res)
-		fmt.Fprintln(os.Stderr, string(b))
+		fmt.Fprintln(os.Stderr, compactJSON(res))
 	} else if res.Status == "panic" || res.Status == "failure" {
 		fmt.Fprintln(os.Stderr, res.Describe())
 	}
@@ -217,8 +227,7 @@ func preflight(prog *loader.Program, allow map[string]bool, asJSON bool) int {
 	msg := fmt.Sprintf("main declares capabilities that were not granted: %s", strings.Join(missing, ", "))
 	hint := "run with --allow " + strings.Join(mainUses(prog), ",")
 	if asJSON {
-		b, _ := json.Marshal(map[string]any{"exit_code": interp.ExitPermission, "status": "denied", "message": msg, "hint": hint, "missing": missing})
-		fmt.Fprintln(os.Stderr, string(b))
+		fmt.Fprintln(os.Stderr, compactJSON(map[string]any{"exit_code": interp.ExitPermission, "status": "denied", "message": msg, "hint": hint, "missing": missing}))
 	} else {
 		fmt.Fprintf(os.Stderr, "%s\n    hint: %s\n", msg, hint)
 	}

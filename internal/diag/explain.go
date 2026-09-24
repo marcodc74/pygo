@@ -2,11 +2,11 @@ package diag
 
 // Explanation documents a diagnostic or runtime panic code.
 type Explanation struct {
-	Code    string `json:"code"`
-	Title   string `json:"title"`
-	Detail  string `json:"detail"`
-	Wrong   string `json:"wrong,omitempty"`
-	Right   string `json:"right,omitempty"`
+	Code   string `json:"code"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	Wrong  string `json:"wrong,omitempty"`
+	Right  string `json:"right,omitempty"`
 }
 
 // Explanations lists every stable code (compile-time E/W, runtime R).

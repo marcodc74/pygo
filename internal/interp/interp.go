@@ -193,6 +193,9 @@ func (th *Thread) trace() []string {
 	var out []string
 	for i := len(th.frames) - 1; i >= 0 && len(out) < 30; i-- {
 		f := th.frames[i]
+		if f.name == "<module>" && f.pos.Line == 0 {
+			continue
+		}
 		file := ""
 		if f.mod != nil {
 			file = f.mod.Path
