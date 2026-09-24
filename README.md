@@ -104,7 +104,40 @@ pygo version
 ```
 
 Su macOS il binario scaricato dal browser può essere bloccato da Gatekeeper; si sblocca con
-`xattr -d com.apple.quarantine pygo-darwin-arm64`. Su Windows rinomina il file in `pygo.exe`.
+`xattr -d com.apple.quarantine pygo-darwin-arm64`.
+
+### Windows
+
+Il modo più semplice è lo script di installazione. Apri **PowerShell** e incolla:
+
+```powershell
+irm https://raw.githubusercontent.com/marcodc74/pygo/main/install.ps1 | iex
+```
+
+Lo script ([`install.ps1`](install.ps1)):
+- sceglie il binario giusto per il tuo PC (x64 o ARM64) e lo scarica dalla release;
+- verifica che il file sia integro confrontandolo con `SHA256SUMS`, e si ferma se non coincide;
+- lo installa in `%LOCALAPPDATA%\Programs\pygo\pygo.exe` e aggiunge la cartella al PATH dell'utente.
+
+Non servono diritti di amministratore. Per una versione precisa, prima di lanciarlo imposta
+`$env:PYGO_VERSION = "v0.1.0"`; per un'altra cartella, `$env:PYGO_DIR = "C:\tools\pygo"`.
+Dopo l'installazione apri un nuovo terminale e prova `pygo version`.
+
+**Avvisi di sicurezza.** Per ora i binari di Pygo non hanno una firma digitale (Authenticode),
+quindi Windows può mostrare degli avvisi quando li scarichi dal browser. Non significa che il file
+sia dannoso: puoi sempre verificarne l'integrità con `SHA256SUMS`. L'installazione con lo script
+evita di solito questi blocchi.
+- **"Windows ha protetto il PC" (SmartScreen):** clicca *Ulteriori informazioni* → *Esegui comunque*.
+  In alternativa, da PowerShell: `Unblock-File .\pygo-windows-amd64.exe`.
+- **Microsoft Defender mette il file in quarantena:** è un falso positivo frequente per i programmi
+  compilati con Go. Ripristinalo da *Sicurezza di Windows → Protezione da virus e minacce →
+  Cronologia protezione*, e se vuoi segnalalo a Microsoft come falso positivo.
+- **Senza scaricare eseguibili:** se hai Go installato, `go install github.com/marcodc74/pygo/cmd/pygo@v0.1.0`
+  compila pygo sul tuo PC e di solito non attiva SmartScreen.
+
+La firma digitale dei binari Windows è in programma: eliminerà la maggior parte di questi avvisi.
+
+Installazione manuale: scarica il file `.exe` dalla tabella sopra e rinominalo in `pygo.exe`.
 
 Tutte le versioni sono elencate in [Releases](https://github.com/marcodc74/pygo/releases).
 In alternativa puoi compilare dai sorgenti (serve Go >= 1.22):
@@ -234,6 +267,7 @@ v0.1.
 - **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
 **Roadmap:**
+- firma digitale dei binari Windows (Authenticode);
 - backend compilato (generazione di Go/WASM);
 - trait e interfacce;
 - `select` su più canali;
