@@ -35,6 +35,9 @@ func IsLocal(p string) bool {
 	return strings.HasPrefix(p, "./") || strings.HasPrefix(p, "../") || strings.HasPrefix(p, "/")
 }
 
+// Key normalizes a file path the way Program keys are stored.
+func Key(p string) string { return filepath.ToSlash(filepath.Clean(p)) }
+
 // Load reads and parses main and its local imports.
 func Load(main string, read ReadFunc) (*Program, []diag.Diagnostic) {
 	if read == nil {
@@ -44,7 +47,7 @@ func Load(main string, read ReadFunc) (*Program, []diag.Diagnostic) {
 		}
 	}
 	prog := &Program{
-		Main:    filepath.ToSlash(filepath.Clean(main)),
+		Main:    Key(main),
 		Files:   map[string]*ast.File{},
 		Sources: map[string]string{},
 		Imports: map[string]map[string]string{},

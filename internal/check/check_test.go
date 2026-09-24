@@ -309,3 +309,46 @@ fn main() {
 }
 `, "E0302", "E0301")
 }
+
+func TestFixes(t *testing.T) {
+	src := `fn transfer(amount: Int, from: Str, to: Str) {}
+fn main() {
+    let n = 1
+    n = 2
+    transfer(10, "a", "b")
+    let s = json.encode(n)
+    print(s)
+}
+`
+	ds := checkSrc(t, src)
+	var fixes []diag.Fix
+	for _, d := range ds {
+		if d.Fix != nil && d.Fix.Safe {
+			fixes = append(fixes, *d.Fix)
+		}
+	}
+	out, n := diag.ApplyFixes(src, fixes)
+	if n != 4 {
+		t.Fatalf("applied %d fixes, want 4:\n%s", n, out)
+	}
+	want := `import "json"
+fn transfer(amount: Int, from: Str, to: Str) {}
+fn main() {
+    var n = 1
+    n = 2
+    transfer(10, from: "a", to: "b")
+    let s = json.encode(n)
+    print(s)
+}
+`
+	if out != want {
+		t.Fatalf("got:\n%s", out)
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "main.pg")
+	os.WriteFile(p, []byte(out), 0o644)
+	prog, _ := loader.Load(p, nil)
+	if ds := Check(prog); diag.HasErrors(ds) {
+		t.Fatalf("fixed program still has errors: %v", ds)
+	}
+}

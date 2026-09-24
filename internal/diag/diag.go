@@ -127,11 +127,15 @@ func JSON(ds []Diagnostic) string {
 	if ds == nil {
 		ds = []Diagnostic{}
 	}
-	b, _ := json.MarshalIndent(map[string]any{
-		"ok":          !HasErrors(ds),
-		"diagnostics": ds,
-	}, "", "  ")
-	return string(b)
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	enc.Encode(struct {
+		OK          bool         `json:"ok"`
+		Diagnostics []Diagnostic `json:"diagnostics"`
+	}{!HasErrors(ds), ds})
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // Suggest returns the candidate closest to name (by edit distance), or "".

@@ -13,6 +13,7 @@ type varInfo struct {
 	used    bool
 	pos     ast.Pos
 	kind    string // "local", "param"
+	declKw  string // "let" / "var" for locals declared with a Let statement
 }
 
 type scope struct {

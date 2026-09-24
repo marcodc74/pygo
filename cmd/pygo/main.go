@@ -24,9 +24,19 @@ var version = "0.1.0-dev"
 const usage = `pygo - AI-first programming language toolchain
 
 usage:
-  pygo run   [--allow caps] [--max-steps N] [--timeout D] [--seed N] [--json] file.pg [-- args]
-  pygo check [--json] file.pg
-  pygo test  [--json] [--filter s] file.pg|dir
+  pygo run      [--allow caps] [--max-steps N] [--timeout D] [--seed N] [--json] file.pg [-- args]
+  pygo run      [--allow caps] -e 'code'        run a snippet (imports first, the rest becomes main)
+  pygo check    [--json] file.pg                static check (diagnostics with codes, hints, fixes)
+  pygo fix      [--all] [--dry-run] [--json] file.pg   apply machine fixes
+  pygo test     [--json] [--filter s] file.pg|dir
+  pygo fmt      [-w] [--check] file.pg          canonical formatting
+  pygo guide    [--stdlib]                      compact language reference for an AI context
+  pygo explain  [--json] [CODE]                 explain a diagnostic/runtime code
+  pygo describe file.pg|module                  API as JSON
+  pygo outline  file.pg                         symbols with content hashes (JSON)
+  pygo edit     file.pg --replace KEY | --insert-after KEY | --append | --delete KEY [--expect-hash H]
+  pygo ast      file.pg                         syntax tree as JSON
+  pygo build    [--allow caps] [--runtime bin] -o app file.pg   self-contained executable
   pygo version
 
 capabilities (--allow): ` + "clock,env,fs,net,proc,rand or all" + `
@@ -34,6 +44,9 @@ exit codes: 0 ok, 1 failure, 2 panic, 3 compile error, 4 capability denied
 `
 
 func main() {
+	if code, ok := runBundle(); ok {
+		os.Exit(code)
+	}
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -46,6 +59,24 @@ func main() {
 		os.Exit(cmdCheck(args))
 	case "test":
 		os.Exit(cmdTest(args))
+	case "fmt":
+		os.Exit(cmdFmt(args))
+	case "fix":
+		os.Exit(cmdFix(args))
+	case "explain":
+		os.Exit(cmdExplain(args))
+	case "guide":
+		os.Exit(cmdGuide(args))
+	case "describe":
+		os.Exit(cmdDescribe(args))
+	case "outline":
+		os.Exit(cmdOutline(args))
+	case "edit":
+		os.Exit(cmdEdit(args))
+	case "ast":
+		os.Exit(cmdAST(args))
+	case "build":
+		os.Exit(cmdBuild(args))
 	case "version", "--version":
 		fmt.Println("pygo", version)
 	case "help", "-h", "--help":
@@ -63,7 +94,11 @@ func printJSON(v any) {
 
 // load parses and checks a program; ok=false if there are errors.
 func load(file string, asJSON bool, showWarnings bool) (*loader.Program, []diag.Diagnostic, bool) {
-	prog, ds := loader.Load(file, nil)
+	return loadWith(file, nil, asJSON, showWarnings)
+}
+
+func loadWith(file string, read loader.ReadFunc, asJSON bool, showWarnings bool) (*loader.Program, []diag.Diagnostic, bool) {
+	prog, ds := loader.Load(file, read)
 	if !diag.HasErrors(ds) {
 		ds = append(ds, check.Check(prog)...)
 	}
@@ -119,17 +154,33 @@ func cmdRun(args []string) int {
 	timeout := fs.Duration("timeout", 0, "abort after this duration (0 = unlimited)")
 	seed := fs.Int64("seed", 0, "seed of the rand module")
 	asJSON := fs.Bool("json", false, "print diagnostics and the run result as JSON (result on stderr)")
+	snippet := fs.String("e", "", "run this code instead of a file")
 	fs.Parse(args)
-	if fs.NArg() < 1 {
+	if fs.NArg() < 1 && *snippet == "" {
 		fmt.Fprintln(os.Stderr, "usage: pygo run [flags] file.pg [-- args]")
 		return 2
 	}
-	file := fs.Arg(0)
-	progArgs := fs.Args()[1:]
+	var file string
+	var progArgs []string
+	var read loader.ReadFunc
+	if *snippet != "" {
+		file = "snippet.pg"
+		src := wrapSnippet(*snippet, *allowS)
+		read = func(p string) (string, error) {
+			if p == file {
+				return src, nil
+			}
+			return readFile(p)
+		}
+		progArgs = fs.Args()
+	} else {
+		file = fs.Arg(0)
+		progArgs = fs.Args()[1:]
+	}
 	if len(progArgs) > 0 && progArgs[0] == "--" {
 		progArgs = progArgs[1:]
 	}
-	prog, ds, ok := load(file, *asJSON, false)
+	prog, ds, ok := loadWith(file, read, *asJSON, false)
 	if !ok {
 		if *asJSON {
 			fmt.Fprintln(os.Stderr, diag.JSON(ds))
@@ -245,4 +296,31 @@ func cmdTest(args []string) int {
 		return 1
 	}
 	return 0
+}
+
+// wrapSnippet turns loose statements into a program: import lines stay at
+// the top, everything else becomes the body of a fallible main that uses
+// the granted capabilities.
+func wrapSnippet(code, allow string) string {
+	if strings.Contains(code, "fn main(") {
+		return code
+	}
+	var imports, body []string
+	for _, line := range strings.Split(code, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "import ") {
+			imports = append(imports, strings.TrimSpace(line))
+		} else {
+			body = append(body, "    "+line)
+		}
+	}
+	var caps []string
+	for c := range parseAllow(allow) {
+		caps = append(caps, c)
+	}
+	sort.Strings(caps)
+	uses := ""
+	if len(caps) > 0 {
+		uses = " uses " + strings.Join(caps, ", ")
+	}
+	return strings.Join(imports, "\n") + "\nfn main() -> !" + uses + " {\n" + strings.Join(body, "\n") + "\n}\n"
 }

@@ -58,6 +58,9 @@ func (c *Checker) stmt(fc *fnCtx, sc *scope, s ast.Stmt, last bool) *Type {
 		}
 		c.checkShadow(sc, s.Name, s.Pos)
 		sc.declare(s.Name, t, s.Mutable, s.Pos, "local")
+		if v := sc.vars[s.Name]; v != nil {
+			v.declKw = letWord(s.Mutable)
+		}
 	case *ast.Assign:
 		c.assign(fc, sc, s)
 	case *ast.ExprStmt:
@@ -200,6 +203,9 @@ func (c *Checker) assign(fc *fnCtx, sc *scope, s *ast.Assign) {
 				hint = fmt.Sprintf("parameters are immutable; copy it first: var %s2 = %s", t.Name, t.Name)
 			}
 			c.errorf("E0202", t.Pos, hint, "cannot assign to immutable '%s'", t.Name)
+			if v.kind == "local" && v.declKw == "let" {
+				c.fix(v.pos, 3, "var", true)
+			}
 		}
 		target = v.typ
 		if s.Op != "=" {
@@ -456,6 +462,7 @@ func (c *Checker) expr1(fc *fnCtx, sc *scope, e ast.Expr, want *Type) *Type {
 		fc.try--
 		if c.fallibleCalls == before {
 			c.warnf("W0404", e.Pos, "remove 'try'", "nothing in this expression can fail")
+			c.fix(e.Pos, 4, "", true)
 		}
 		return t
 	case *ast.Catch:
@@ -524,9 +531,14 @@ func (c *Checker) ident(fc *fnCtx, sc *scope, e *ast.Ident) *Type {
 	}
 	if sig.Get(e.Name) != nil && e.Name != "core" {
 		c.errorf("E0208", e.Pos, fmt.Sprintf("add at the top of the file: import \"%s\"", e.Name), "module '%s' is not imported", e.Name)
+		c.fix(ast.Pos{Line: 1, Col: 1}, 0, fmt.Sprintf("import \"%s\"\n", e.Name), true)
 		return tAny
 	}
-	c.errorf("E0201", e.Pos, didYouMean(e.Name, c.visibleNames(sc)), "undefined name '%s'", e.Name)
+	hint := didYouMean(e.Name, c.visibleNames(sc))
+	c.errorf("E0201", e.Pos, hint, "undefined name '%s'", e.Name)
+	if s := suggestion(hint); s != "" {
+		c.fix(e.Pos, len([]rune(e.Name)), s, false)
+	}
 	return tAny
 }
 
@@ -600,6 +612,7 @@ func (c *Checker) fieldType1(fc *fnCtx, sc *scope, e *ast.Selector, xt *Type, as
 			return t
 		}
 		c.errorf("E0205", e.Pos, didYouMean(name, m.memberNames()), "module %s has no member '%s'", m.name, name)
+		c.fixSuggestion(e.Pos, name)
 		return tAny
 	case KStruct:
 		si := xt.Struct
@@ -613,6 +626,7 @@ func (c *Checker) fieldType1(fc *fnCtx, sc *scope, e *ast.Selector, xt *Type, as
 			return boundType(m, nil)
 		}
 		c.errorf("E0204", e.Pos, didYouMean(name, structMembers(si)), "%s has no field or method '%s'", si.name, name)
+		c.fixSuggestion(e.Pos, name)
 		return tAny
 	case KEnum:
 		if m, ok := xt.Enum.methods[name]; ok {
@@ -664,6 +678,7 @@ func (c *Checker) fieldType1(fc *fnCtx, sc *scope, e *ast.Selector, xt *Type, as
 			hint = fmt.Sprintf("%s methods: %s", tn, strings.Join(sortedF(c.methods[tn]), ", "))
 		}
 		c.errorf("E0204", e.Pos, hint, "%s has no method '%s'", tn, name)
+		c.fixSuggestion(e.Pos, name)
 		return tAny
 	}
 	c.errorf("E0204", e.Pos, "", "%s has no field or method '%s'", xt, name)
@@ -1082,6 +1097,7 @@ func (c *Checker) call(fc *fnCtx, sc *scope, e *ast.Call, inSpawn bool) *Type {
 		if ai > 0 && cl.named && cl.params[pi].name != "" {
 			c.errorf("E0306", a.Pos, fmt.Sprintf("write %s: %s", cl.params[pi].name, printer.Expr(a.Value)),
 				"argument %d of %s must be named (only the first argument is positional)", ai+1, cl.name)
+			c.fix(exprStart(a.Value), 0, cl.params[pi].name+": ", true)
 		}
 		vals[pi], given[pi] = a.Value, true
 		pi++
@@ -1169,6 +1185,9 @@ func (c *Checker) call(fc *fnCtx, sc *scope, e *ast.Call, inSpawn bool) *Type {
 				hint = fmt.Sprintf("handle it: %s catch e { ... }  (or declare %s fallible with -> !T and use try)", call, fc.name)
 			}
 			c.errorf("E0401", e.Pos, hint, "%s can fail; the error must be handled", cl.name)
+			if fc.fallible || fc.isTest {
+				c.fix(exprStart(e), 0, "try ", false)
+			}
 		}
 	}
 	if len(cl.uses) > 0 {
@@ -1363,4 +1382,14 @@ func underscores(n int) string {
 		parts[i] = "_"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// fixSuggestion turns the did-you-mean hint of the last diagnostic into a fix.
+func (c *Checker) fixSuggestion(pos ast.Pos, name string) {
+	if len(c.diags) == 0 {
+		return
+	}
+	if s := suggestion(c.diags[len(c.diags)-1].Hint); s != "" {
+		c.fix(pos, len([]rune(name)), s, false)
+	}
 }

@@ -755,3 +755,45 @@ func hasBreak(b *ast.Block) bool {
 	})
 	return found
 }
+
+// fix attaches a machine-applicable edit to the most recent diagnostic.
+func (c *Checker) fix(pos ast.Pos, del int, insert string, safe bool) {
+	if len(c.diags) == 0 {
+		return
+	}
+	c.diags[len(c.diags)-1].Fix = &diag.Fix{Line: pos.Line, Col: pos.Col, Delete: del, Insert: insert, Safe: safe}
+}
+
+// suggestion extracts X from a "did you mean 'X'?" hint.
+func suggestion(hint string) string {
+	const pre = "did you mean '"
+	if !strings.HasPrefix(hint, pre) {
+		return ""
+	}
+	rest := hint[len(pre):]
+	if i := strings.IndexByte(rest, '\''); i > 0 {
+		return rest[:i]
+	}
+	return ""
+}
+
+// exprStart returns the position of the leftmost token of e.
+func exprStart(e ast.Expr) ast.Pos {
+	switch e := e.(type) {
+	case *ast.Selector:
+		return exprStart(e.X)
+	case *ast.Call:
+		return exprStart(e.Fn)
+	case *ast.Index:
+		return exprStart(e.X)
+	case *ast.Binary:
+		return exprStart(e.X)
+	case *ast.Range:
+		return exprStart(e.Lo)
+	case *ast.Catch:
+		return exprStart(e.X)
+	case *ast.StructLit:
+		return exprStart(e.Type)
+	}
+	return e.P()
+}

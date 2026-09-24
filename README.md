@@ -85,9 +85,25 @@ go build -o pygo ./cmd/pygo          # richiede Go >= 1.22
 
 ./pygo run examples/hello.pg
 ./pygo run --allow fs,net app.pg -- arg1 arg2
+./pygo run -e 'print([1, 2, 3].map(fn(x) => x * x).sum())'
 ./pygo check --json app.pg           # diagnostica per agenti
 ./pygo test examples/                # esegue i blocchi test "..." {}
 ```
+
+Comandi pensati per un agente (tutti con output JSON):
+
+| Comando | A cosa serve |
+|---|---|
+| `pygo guide` | Specifica compatta del linguaggio e firme della stdlib (~2.600 token), da mettere nel contesto del modello |
+| `pygo check --json` | Diagnostica con codice stabile, hint e correzione applicabile (`fix`) |
+| `pygo fix [--all]` | Applica le correzioni: sicure di default, anche i "did you mean" con `--all` |
+| `pygo explain E0306` | Spiega un codice con esempio sbagliato e corretto |
+| `pygo describe file.pg\|json` | API di un file o di un modulo stdlib in JSON |
+| `pygo outline file.pg` | Simboli (`fn:main`, `struct:User`, ...) con righe e hash del contenuto |
+| `pygo edit file.pg --replace fn:nome` | Sostituisce, inserisce o cancella una dichiarazione intera (niente diff per riga); `--expect-hash` rifiuta la modifica se nel frattempo il simbolo è cambiato |
+| `pygo fmt [-w]` | Forma canonica unica |
+| `pygo ast file.pg` | AST in JSON |
+| `pygo build -o app file.pg` | Eseguibile autonomo (runtime + sorgente); con `--runtime` si può usare un binario compilato per un altro OS |
 
 Exit code stabili: `0` ok, `1` failure non gestita in `main`, `2` panic,
 `3` errore di compilazione, `4` capability non concessa.
@@ -149,13 +165,14 @@ Il progetto è in sviluppo attivo (v0.1).
 - contratti e test inline;
 - capability con `--allow`;
 - budget di passi e timeout;
-- CLI `run` / `check` / `test` con `--json`.
+- tutti i comandi della CLI elencati sopra.
 
 **In corso**:
-- comandi per agenti: `fmt`, `fix` (applica le correzioni proposte), `explain`, `guide` (specifica compatta da mettere nel contesto), `describe`, `outline`, `edit` per simbolo, `ast`;
-- `pygo build`, che crea un eseguibile autonomo;
-- Dockerfile, manifest Kubernetes, cross-compilazione e CI;
-- specifica completa in `docs/`.
+- Dockerfile e manifest Kubernetes;
+- Makefile per la cross-compilazione (Linux/macOS/Windows × amd64/arm64);
+- CI GitHub Actions;
+- specifica completa in `docs/`;
+- altri esempi (server HTTP, concorrenza).
 
 **Roadmap**: backend compilato (Go/WASM), trait/interfacce, `select`, LSP,
 package manager, record/replay degli effetti.
