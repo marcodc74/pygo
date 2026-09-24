@@ -1,0 +1,45 @@
+import "fs"
+import "os"
+
+/// Word frequencies of a text file: pygo run --allow fs examples/wordcount.pg -- file.txt
+fn count_words(text: Str) -> Map[Str, Int] {
+    var counts: Map[Str, Int] = {}
+    for line in text.lines() {
+        for raw in line.split(" ") {
+            let w = raw.trim().lower()
+            if w.is_empty() {
+                continue
+            }
+            counts[w] = (counts.get(w) ?? 0) + 1
+        }
+    }
+    return counts
+}
+
+fn main() -> ! uses fs {
+    let args = os.args()
+    if args.len() != 1 {
+        eprint("usage: wordcount <file>")
+        os.exit(1)
+    }
+    let text = try fs.read(args[0])
+    let counts = count_words(text)
+    let top = counts.keys().sorted(key: fn(w) => counts[w], desc: true)
+    for w in top[0..math_min(top.len(), b: 10)] {
+        print("${w:<15} ${counts[w]:>5}")
+    }
+}
+
+fn math_min(a: Int, b: Int) -> Int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+test "counts" {
+    let c = count_words("a b a\nB c")
+    assert c["a"] == 2
+    assert c["b"] == 2
+    assert c.len() == 3
+}

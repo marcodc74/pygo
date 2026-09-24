@@ -1,0 +1,14 @@
+let pi = 3.141592653589793
+let e = 2.718281828459045
+fn abs[T](x: T) -> T {}
+fn sqrt(x: Float) -> Float {}
+fn pow(base: Float, exp: Float) -> Float {}
+fn exp(x: Float) -> Float {}
+fn log(x: Float) -> Float {}
+fn sin(x: Float) -> Float {}
+fn cos(x: Float) -> Float {}
+fn tan(x: Float) -> Float {}
+fn floor(x: Float) -> Int {}
+fn ceil(x: Float) -> Int {}
+fn round(x: Float) -> Int {}
+fn is_nan(x: Float) -> Bool {}

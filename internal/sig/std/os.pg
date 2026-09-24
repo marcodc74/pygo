@@ -1,0 +1,10 @@
+/// Program arguments (after the script path / after "--").
+fn args() -> List[Str] {}
+/// Environment variable, or nil if unset.
+fn env(name: Str) -> Str? uses env {}
+/// Exit immediately with the given status code.
+fn exit(code: Int) {}
+/// "os/arch", e.g. "linux/amd64".
+fn platform() -> Str {}
+/// Current working directory.
+fn cwd() -> Str uses env {}

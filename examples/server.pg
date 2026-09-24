@@ -1,0 +1,65 @@
+import "http"
+import "os"
+import "log"
+
+/// In-memory item served by the API.
+struct Item {
+    id: Int
+    name: Str
+    price: Float
+}
+
+fn catalog() -> List[Item] {
+    return [
+        Item{id: 1, name: "keyboard", price: 49.9},
+        Item{id: 2, name: "mouse", price: 19.5},
+    ]
+}
+
+fn find(items: List[Item], id: Int) -> Item? => items.find(fn(it) => it.id == id)
+
+/// Routes: GET /healthz, GET /items, GET /items?id=N
+fn handle(req: http.Request) -> http.Response {
+    log.info("request", fields: {"method": req.method, "path": req.path})
+    return match req.path {
+        "/healthz" => http.text(200, body: "ok")
+        "/items" => items_route(req)
+        _ => http.json(404, body: {"error": "not found", "path": req.path})
+    }
+}
+
+fn items_route(req: http.Request) -> http.Response {
+    let raw = req.query.get("id")
+    if raw == nil {
+        return http.json(200, body: catalog())
+    }
+    let id = parse_int(raw) catch e {
+        return http.json(400, body: {"error": e.message})
+    }
+    let item = find(catalog(), id: id)
+    if item == nil {
+        return http.json(404, body: {"error": "no item ${id}"})
+    }
+    return http.json(200, body: item)
+}
+
+fn main() -> ! uses net, env {
+    let port = os.env("PORT") ?? "8080"
+    log.info("listening", fields: {"port": port})
+    try http.serve(":${port}", handler: handle)
+    log.info("stopped")
+}
+
+test "item lookup" {
+    assert find(catalog(), id: 2) != nil
+    assert find(catalog(), id: 9) == nil
+}
+
+test "routing" {
+    let req = http.Request{method: "GET", path: "/items", query: {"id": "1"}, headers: {}, body: ""}
+    let res = handle(req)
+    assert res.status == 200
+    assert res.body.contains("keyboard")
+    let missing = handle(http.Request{method: "GET", path: "/nope", query: {}, headers: {}, body: ""})
+    assert missing.status == 404
+}

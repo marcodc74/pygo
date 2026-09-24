@@ -1,0 +1,3 @@
+struct Result { code: Int, stdout: Str, stderr: Str }
+/// Run a command (no shell). Fails only if it cannot start or times out; check code.
+fn run(cmd: List[Str], stdin: Str = "", timeout_ms: Int = 60000) -> !Result uses proc {}

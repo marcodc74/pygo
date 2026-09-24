@@ -1,0 +1,67 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: vet
+        run: go vet ./...
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l .)"
+      - name: unit tests
+        run: go test ./...
+      - name: race detector
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+      - name: examples (check + inline tests)
+        shell: bash
+        run: |
+          go build -o pygo-bin ./cmd/pygo
+          for f in examples/*.pg; do ./pygo-bin check "$f"; done
+          ./pygo-bin test examples/
+
+  dist:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - run: make dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pygo-binaries
+          path: dist/
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build app image
+        run: docker build -f deploy/Dockerfile -t pygo-app .
+      - name: build toolchain image
+        run: docker build -f deploy/Dockerfile --target toolchain -t pygo .
+      - name: smoke test
+        run: |
+          docker run -d --name app -p 8080:8080 pygo-app
+          for i in $(seq 1 20); do curl -fsS localhost:8080/healthz && break; sleep 1; done
+          curl -fsS localhost:8080/items
+          docker stop app
+          test "$(docker inspect app --format '{{.State.ExitCode}}')" = "0"

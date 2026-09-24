@@ -1,0 +1,13 @@
+/// Read a whole UTF-8 file. Fails with code "E_IO".
+fn read(path: Str) -> !Str uses fs {}
+/// Create or truncate a file and write data.
+fn write(path: Str, data: Str) -> ! uses fs {}
+/// Append data to a file (created if missing).
+fn append(path: Str, data: Str) -> ! uses fs {}
+fn exists(path: Str) -> Bool uses fs {}
+/// Entry names of a directory, sorted.
+fn list(dir: Str) -> !List[Str] uses fs {}
+/// Remove a file or an empty directory.
+fn remove(path: Str) -> ! uses fs {}
+/// Create a directory and its parents.
+fn mkdir(path: Str) -> ! uses fs {}

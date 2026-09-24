@@ -1,0 +1,14 @@
+/// Request received by a server handler.
+struct Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str }
+/// Response returned by a handler or by a client call.
+struct Response { status: Int, body: Str = "", headers: Map[Str, Str] = {} }
+
+fn get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
+fn post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
+fn request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
+/// Serve HTTP on addr (e.g. ":8080") until SIGINT/SIGTERM (graceful shutdown). handler runs concurrently.
+fn serve(addr: Str, handler: fn(Request) -> Response) -> ! uses net {}
+/// Plain-text response.
+fn text(status: Int, body: Str) -> Response {}
+/// JSON response (body is encoded with json.encode).
+fn json(status: Int, body: Any) -> Response {}

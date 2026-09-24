@@ -1,0 +1,6 @@
+/// Encode a value as JSON. Structs become objects, enums {"variant": name, ...fields}. indent 0 = compact.
+fn encode(value: Any, indent: Int = 0) -> Str {}
+/// Decode JSON into Map/List/Str/Int/Float/Bool/nil. Fails with code "E_JSON".
+fn decode(text: Str) -> !Any {}
+/// Decode and validate JSON against a struct type: json.decode_as(text, schema: User). Fails with code "E_JSON" or "E_SCHEMA".
+fn decode_as[T](text: Str, schema: Type[T]) -> !T {}
