@@ -2,7 +2,7 @@
 #   docker build -f deploy/Dockerfile -t pygo-app .                        -> app image (default: examples/server.pg)
 #   docker build -f deploy/Dockerfile --build-arg APP=path/app.pg --build-arg ALLOW=net,env -t my-app .
 #   docker build -f deploy/Dockerfile --target toolchain -t pygo .          -> image with the pygo CLI
-ARG GO_VERSION=1.22
+ARG GO_VERSION=1.24
 
 FROM golang:${GO_VERSION}-alpine AS build
 WORKDIR /src
