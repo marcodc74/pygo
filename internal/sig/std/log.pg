@@ -1,0 +1,5 @@
+/// Structured logs: one JSON object per line on stderr {"ts","level","msg",...fields}.
+fn debug(message: Str, fields: Map[Str, Any] = {}) {}
+fn info(message: Str, fields: Map[Str, Any] = {}) {}
+fn warn(message: Str, fields: Map[Str, Any] = {}) {}
+fn error(message: Str, fields: Map[Str, Any] = {}) {}

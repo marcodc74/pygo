@@ -1,0 +1,15 @@
+/// Minimal program: string interpolation, lists, maps, lambdas.
+fn main() {
+    let name = "Pygo"
+    let nums = [3, 1, 2]
+    let doubled = nums.map(fn(n) => n * 2).sorted()
+    let ages = {"ada": 36, "alan": 41}
+    print("hello from ${name}: ${doubled}")
+    for who, age in ages {
+        print("${who:<5} is ${age:>3} years old")
+    }
+}
+
+test "doubling keeps the length" {
+    assert [1, 2, 3].map(fn(n) => n * 2).len() == 3
+}

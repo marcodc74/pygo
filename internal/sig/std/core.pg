@@ -1,0 +1,126 @@
+/// Error value produced by error(...) and received by catch.
+struct Error { message: Str, code: Str = "", data: Any = nil }
+
+/// Write values to stdout separated by one space, then a newline.
+fn print(values: ...Any) {}
+/// Like print, but to stderr.
+fn eprint(values: ...Any) {}
+/// Length: runes of Str, items of List/Map/Range, buffered items of Chan.
+fn len(x: Any) -> Int {}
+/// Canonical text form of any value (Str is returned unchanged).
+fn str(x: Any) -> Str {}
+/// Debug form: like str but Str values are quoted.
+fn repr(x: Any) -> Str {}
+/// Int from Int, Float (truncates toward zero) or Bool. For Str use parse_int.
+fn int(x: Any) -> Int {}
+/// Float from Int or Float. For Str use parse_float.
+fn float(x: Any) -> Float {}
+/// Parse a base-10 integer (underscores allowed). Fails with code "E_PARSE".
+fn parse_int(text: Str) -> !Int {}
+/// Parse a float. Fails with code "E_PARSE".
+fn parse_float(text: Str) -> !Float {}
+/// Name of the runtime type: "Int", "Str", "List", "User", ...
+fn type_of(x: Any) -> Str {}
+/// Build an Error value; use it with fail.
+fn error(message: Str, code: Str = "", data: Any = nil) -> Error {}
+/// Abort the program (unrecoverable). Use fail for recoverable errors.
+fn panic(message: Str) {}
+/// Create a channel; capacity 0 = unbuffered.
+fn chan(capacity: Int = 0) -> Chan[Any] {}
+/// Wait for all tasks; fails with the first failure.
+fn wait_all[T](tasks: List[Task[T]]) -> !List[T] {}
+/// Read one line from stdin without the newline; nil at end of input.
+fn read_line() -> Str? {}
+/// Read all of stdin.
+fn read_all() -> Str {}
+
+impl Str {
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    fn upper(self) -> Str {}
+    fn lower(self) -> Str {}
+    fn trim(self) -> Str {}
+    fn trim_start(self) -> Str {}
+    fn trim_end(self) -> Str {}
+    fn split(self, sep: Str) -> List[Str] {}
+    fn lines(self) -> List[Str] {}
+    fn chars(self) -> List[Str] {}
+    fn contains(self, sub: Str) -> Bool {}
+    fn starts_with(self, prefix: Str) -> Bool {}
+    fn ends_with(self, suffix: Str) -> Bool {}
+    /// Rune index of the first occurrence of sub, or nil.
+    fn find(self, sub: Str) -> Int? {}
+    fn replace(self, old: Str, new: Str) -> Str {}
+    fn repeat(self, count: Int) -> Str {}
+    fn pad_left(self, width: Int, fill: Str = " ") -> Str {}
+    fn pad_right(self, width: Int, fill: Str = " ") -> Str {}
+}
+
+impl List {
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    fn push(self, item: T) {}
+    /// Remove and return the last item, or nil if empty.
+    fn pop(self) -> T? {}
+    fn insert(self, index: Int, item: T) {}
+    /// Remove and return the item at index (panics if out of range).
+    fn remove(self, index: Int) -> T {}
+    fn clear(self) {}
+    fn extend(self, other: List[T]) {}
+    fn contains(self, item: T) -> Bool {}
+    fn index_of(self, item: T) -> Int? {}
+    fn first(self) -> T? {}
+    fn last(self) -> T? {}
+    fn map[U](self, f: fn(T) -> U) -> List[U] {}
+    fn filter(self, f: fn(T) -> Bool) -> List[T] {}
+    fn reduce[U](self, init: U, f: fn(U, T) -> U) -> U {}
+    fn find(self, f: fn(T) -> Bool) -> T? {}
+    fn any(self, f: fn(T) -> Bool) -> Bool {}
+    fn all(self, f: fn(T) -> Bool) -> Bool {}
+    fn count(self, f: fn(T) -> Bool) -> Int {}
+    /// New sorted list (stable). key maps an item to a comparable Int/Float/Str.
+    fn sorted(self, key: fn(T) -> Any = nil, desc: Bool = false) -> List[T] {}
+    fn reversed(self) -> List[T] {}
+    fn unique(self) -> List[T] {}
+    fn join(self, sep: Str) -> Str {}
+    fn sum(self) -> T {}
+    fn min(self) -> T? {}
+    fn max(self) -> T? {}
+    fn copy(self) -> List[T] {}
+}
+
+impl Map {
+    fn len(self) -> Int {}
+    fn is_empty(self) -> Bool {}
+    /// Value for key, or nil. Use m.get(k) ?? default.
+    fn get(self, key: K) -> V? {}
+    fn has(self, key: K) -> Bool {}
+    /// Remove key and return its value, or nil.
+    fn delete(self, key: K) -> V? {}
+    /// Keys in insertion order.
+    fn keys(self) -> List[K] {}
+    fn values(self) -> List[V] {}
+    fn clear(self) {}
+    fn copy(self) -> Map[K, V] {}
+}
+
+impl Range {
+    fn len(self) -> Int {}
+    fn contains(self, n: Int) -> Bool {}
+    fn to_list(self) -> List[Int] {}
+}
+
+impl Chan {
+    /// Send a value (blocks while the buffer is full).
+    fn send(self, value: T) {}
+    /// Receive a value; nil when the channel is closed and drained.
+    fn recv(self) -> T? {}
+    fn close(self) {}
+    fn len(self) -> Int {}
+}
+
+impl Task {
+    /// Wait for the task; fails if the task failed.
+    fn wait(self) -> !T {}
+    fn done(self) -> Bool {}
+}

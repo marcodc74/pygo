@@ -1,0 +1,56 @@
+import "json"
+
+/// Order line decoded from JSON.
+struct Line {
+    sku: Str
+    qty: Int
+    price: Float
+}
+
+enum Outcome {
+    Accepted(total: Float)
+    Rejected(reason: Str)
+}
+
+/// Total of a line; fails on invalid quantities.
+fn line_total(l: Line) -> !Float
+    requires l.price >= 0.0
+{
+    if l.qty <= 0 {
+        fail error("invalid quantity for ${l.sku}", code: "E_QTY", data: l.qty)
+    }
+    return float(l.qty) * l.price
+}
+
+fn evaluate(text: Str) -> Outcome {
+    let l = json.decode_as(text, schema: Line) catch e {
+        return Outcome.Rejected(reason: e.message)
+    }
+    let total = line_total(l) catch e {
+        return Outcome.Rejected(reason: "${e.code}: ${e.message}")
+    }
+    return Outcome.Accepted(total: total)
+}
+
+fn main() {
+    let inputs = [
+        r"""{"sku": "A1", "qty": 3, "price": 2.5}""",
+        r"""{"sku": "B2", "qty": 0, "price": 9.0}""",
+        r"""{"sku": "C3", "qty": "many", "price": 1.0}""",
+    ]
+    for text in inputs {
+        match evaluate(text) {
+            Outcome.Accepted(total) => print("accepted, total ${total:.2}")
+            Outcome.Rejected(reason) => print("rejected:", reason)
+        }
+    }
+}
+
+test "rejects zero quantity" {
+    let o = evaluate(r"""{"sku": "X", "qty": 0, "price": 1.0}""")
+    let rejected = match o {
+        Outcome.Rejected(_) => true
+        _ => false
+    }
+    assert rejected
+}

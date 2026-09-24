@@ -1,0 +1,8 @@
+/// Deterministic by default (seed 0); change with --seed N.
+fn int(lo: Int, hi: Int) -> Int uses rand {}
+/// Float in [0, 1).
+fn float() -> Float uses rand {}
+fn choice[T](items: List[T]) -> T? uses rand {}
+fn shuffle[T](items: List[T]) -> List[T] uses rand {}
+/// Random UUID v4.
+fn uuid() -> Str uses rand {}

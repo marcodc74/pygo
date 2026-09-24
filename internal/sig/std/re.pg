@@ -1,0 +1,9 @@
+/// Regular expressions (RE2 syntax). Invalid patterns fail with code "E_REGEX".
+fn matches(pattern: Str, text: Str) -> !Bool {}
+/// First match, or nil.
+fn find(pattern: Str, text: Str) -> !Str? {}
+fn find_all(pattern: Str, text: Str) -> !List[Str] {}
+/// Capture groups of the first match (index 0 = whole match), or nil.
+fn groups(pattern: Str, text: Str) -> !List[Str]? {}
+fn replace(pattern: Str, text: Str, with: Str) -> !Str {}
+fn split(pattern: Str, text: Str) -> !List[Str] {}

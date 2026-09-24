@@ -1,0 +1,8 @@
+/// Unix time in seconds.
+fn now() -> Float uses clock {}
+/// Unix time in milliseconds.
+fn now_ms() -> Int uses clock {}
+/// Current UTC time as RFC 3339 text.
+fn iso() -> Str uses clock {}
+/// Pause the current task.
+fn sleep(ms: Int) {}
