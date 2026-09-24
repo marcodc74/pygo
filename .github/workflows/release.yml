@@ -1,10 +1,17 @@
 name: release
 
-# Pushing a tag like v0.1.0 builds the binaries for every OS/arch and
-# publishes a GitHub release with them and their SHA-256 checksums.
+# Pushing a tag like v0.1.0 (or running the workflow manually with a tag
+# name) builds the binaries for every OS/arch and publishes a GitHub release
+# with them and their SHA-256 checksums. When run manually, the tag is
+# created by the release on the commit the workflow runs on.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create, e.g. v0.1.0"
+        required: true
 
 permissions:
   contents: write
@@ -12,6 +19,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,17 +31,18 @@ jobs:
       - name: test
         run: go test ./...
       - name: build binaries
-        run: make dist VERSION=${GITHUB_REF_NAME}
+        run: make dist VERSION=${TAG}
       - name: checksums
         run: cd dist && sha256sum * > SHA256SUMS
       - name: smoke test
-        run: ./dist/pygo-linux-amd64 version | grep "${GITHUB_REF_NAME}"
+        run: ./dist/pygo-linux-amd64 version | grep "${TAG}"
       - name: publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Pygo $GITHUB_REF_NAME" \
+          gh release create "$TAG" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Pygo $TAG" \
             --notes-file - <<'NOTES'
           Pygo, an AI-first programming language: single static binary, no dependencies.
 
