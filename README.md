@@ -78,11 +78,41 @@ test "rejects zero quantity" {
 
 Altri esempi sono in [`examples/`](examples/).
 
+## Installazione
+
+Scarica il binario per il tuo sistema dalla release
+**[v0.1.0](https://github.com/marcodc74/pygo/releases/tag/v0.1.0)**.
+Non ha dipendenze: basta un file.
+
+| Sistema | File |
+|---|---|
+| Linux x86-64 | [`pygo-linux-amd64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-linux-amd64) |
+| Linux ARM64 | [`pygo-linux-arm64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-linux-arm64) |
+| macOS Intel | [`pygo-darwin-amd64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-darwin-amd64) |
+| macOS Apple Silicon | [`pygo-darwin-arm64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-darwin-arm64) |
+| Windows x86-64 | [`pygo-windows-amd64.exe`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-windows-amd64.exe) |
+| Windows ARM64 | [`pygo-windows-arm64.exe`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-windows-arm64.exe) |
+
+Esempio su Linux x86-64:
+
+```sh
+curl -fsSLO https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-linux-amd64
+curl -fsSLO https://github.com/marcodc74/pygo/releases/download/v0.1.0/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS     # verifica l'integrità
+chmod +x pygo-linux-amd64 && sudo mv pygo-linux-amd64 /usr/local/bin/pygo
+pygo version
+```
+
+Su macOS il binario scaricato dal browser può essere bloccato da Gatekeeper; si sblocca con
+`xattr -d com.apple.quarantine pygo-darwin-arm64`. Su Windows rinomina il file in `pygo.exe`.
+
+Tutte le versioni sono elencate in [Releases](https://github.com/marcodc74/pygo/releases).
+In alternativa puoi compilare dai sorgenti (serve Go >= 1.22):
+`go build -o pygo ./cmd/pygo`.
+
 ## Uso
 
 ```sh
-go build -o pygo ./cmd/pygo          # richiede Go >= 1.22
-
 ./pygo run examples/hello.pg
 ./pygo run --allow fs,net app.pg -- arg1 arg2
 ./pygo run -e 'print([1, 2, 3].map(fn(x) => x * x).sum())'
