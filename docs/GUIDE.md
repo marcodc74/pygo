@@ -69,7 +69,7 @@ let a = match s {
 - Patterns: `_`, `name`, literals, `1 | 2`, `lo..=hi`, `lo..hi`, `Enum.Variant(p, _)`, guards `if cond`. match must be exhaustive (all variants, or `_`).
 
 ## Effects (capabilities)
-Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python`. Callers of effectful functions must declare them too. The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
+Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python`. Callers of effectful functions must declare them too, and so must a function that uses an effectful function as a value (callback, route handler). The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
 
 ## Concurrency
 `let t = spawn work(x)` → `Task[T]`; `try t.wait()`; `try wait_all(tasks)`. Channels: `let ch = chan(10)`, `ch.send(v)`, `ch.recv()` (T?, nil when closed), `ch.close()`, `for v in ch { }`. Lists/maps are thread-safe; prefer channels to shared state.
@@ -82,6 +82,21 @@ fn page(users: List[User]) -> http.Response => http.html(200, body: html"<ul>${u
 ```
 - Each literal is a complete fragment: close tags, quotes and comments inside it (E0312). Use `'` for attributes in one-line literals, or `"""`.
 - `html.raw(s)` (`import "html"`) marks text as markup WITHOUT escaping: only for markup you wrote, never for input.
+
+## HTTP server
+```
+fn routes() -> List[http.Route] uses fs {
+    return [
+        http.Route{method: "GET", path: "/items/{id}", handler: show},   // req.params["id"]
+        http.Route{method: "POST", path: "/items", handler: create},      // try http.form(req) or json.decode_as(req.body, schema: T)
+        http.Route{method: "GET", path: "/static/{path...}", handler: fn(req) => http.static(req, dir: "public")},
+    ]
+}
+fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.dispatch(req, routes: routes())) }
+```
+- The FIRST matching route wins; same path with another method → 405, no match → 404. Test handlers by calling them with an `http.Request{...}` literal.
+- Responses: `http.text/json/html(status, body: x)`, `http.redirect("/items")` (303), `http.Response{status: 200, body: b, headers: {...}, cookies: [http.Cookie{name: "s", value: v}]}` (cookies default to HttpOnly, Secure, SameSite=Lax). Request cookies: `req.cookies.get("s")`.
+- Bodies over `max_body` (serve argument, default 1 MiB) get 413.
 
 ## Tests
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.
@@ -240,12 +255,18 @@ fn html.raw(text: Str) -> Html
 
 ### import "http"
 ```
-struct http.Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str }
-struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {} }
+struct http.Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str, params: Map[Str, Str] = {}, cookies: Map[Str, Str] = {} }
+struct http.Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, http_only: Bool = true, secure: Bool = true, same_site: Str = "Lax" }
+struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
+struct http.Route { method: Str, path: Str, handler: fn(Request) -> Response }
 fn http.get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
-fn http.serve(addr: Str, handler: fn(Request) -> Response) -> ! uses net
+fn http.serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net
+fn http.dispatch(req: Request, routes: List[Route]) -> Response
+fn http.static(req: Request, dir: Str) -> Response uses fs
+fn http.form(req: Request) -> !Map[Str, Str]
+fn http.redirect(location: Str, status: Int = 303) -> Response
 fn http.text(status: Int, body: Str) -> Response
 fn http.json(status: Int, body: Any) -> Response
 fn http.html(status: Int, body: Html) -> Response

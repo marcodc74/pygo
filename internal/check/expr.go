@@ -590,9 +590,11 @@ func (c *Checker) ident(fc *fnCtx, sc *scope, e *ast.Ident) *Type {
 		if nt := sc.narrowed(e.Name); nt != nil {
 			return nt
 		}
+		c.valueEffects(fc, v.typ, e.Pos)
 		return v.typ
 	}
 	if t := c.cur.member(e.Name); t != nil {
+		c.valueEffects(fc, t, e.Pos)
 		return t
 	}
 	if im, ok := c.cur.imports[e.Name]; ok {
@@ -621,6 +623,15 @@ func (c *Checker) ident(fc *fnCtx, sc *scope, e *ast.Ident) *Type {
 		c.fix(e.Pos, len([]rune(e.Name)), s, false)
 	}
 	return tAny
+}
+
+// valueEffects counts the effects of a named function used as a value
+// (a route handler, a callback): whoever takes it can call it, so the
+// effects belong to the enclosing function as if it called it.
+func (c *Checker) valueEffects(fc *fnCtx, t *Type, pos ast.Pos) {
+	if fc != nil && t.K == KFn && t.Fn != nil && len(t.Fn.uses) > 0 {
+		c.useEffects(fc, t.Fn.uses, pos)
+	}
 }
 
 func (c *Checker) structLit(fc *fnCtx, sc *scope, e *ast.StructLit) *Type {
@@ -694,6 +705,7 @@ func (c *Checker) fieldType1(fc *fnCtx, sc *scope, e *ast.Selector, xt *Type, as
 			if assign {
 				c.errorf("E0202", e.Pos, "", "cannot assign to module member %s.%s", m.name, name)
 			}
+			c.valueEffects(fc, t, e.Pos)
 			return t
 		}
 		c.errorf("E0205", e.Pos, didYouMean(name, m.memberNames()), "module %s has no member '%s'", m.name, name)

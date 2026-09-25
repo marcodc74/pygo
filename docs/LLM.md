@@ -315,6 +315,11 @@ Il codice generato da un modello va trattato come non fidato.
   e il checker rifiuta una `Str` dove serve `Html`. L'unica eccezione è
   `html.raw(s)`: in revisione basta cercare `html.raw` per trovare tutti i
   punti in cui del testo diventa markup senza escaping.
+- **Server web prudente di default.** `http.static` non serve file nascosti
+  (`.env`, `.git`) né percorsi con `..`; i cookie sono `HttpOnly`, `Secure` e
+  `SameSite=Lax` se non si dice altro; i body oltre `max_body` ricevono 413.
+  Una funzione passata come valore (per esempio l'handler di una rotta che
+  legge file) porta con sé i suoi effetti: chi la usa deve dichiararli.
 - **`python` equivale a concedere tutto**, perché il codice Python non ha
   sandbox. Non concederlo a codice non fidato.
 - **In produzione**, esegui i tool dentro un container. Usa l'immagine
@@ -339,6 +344,8 @@ Il codice generato da un modello va trattato come non fidato.
 - **Pagine web.** Chiedi di costruire l'HTML con funzioni piccole che
   restituiscono `Html` (`fn riga(t: Todo) -> Html => html"..."`) e di
   comporle con `${lista.map(riga)}`. Se il modello concatena stringhe, il
-  checker lo ferma con un errore e propone la correzione.
+  checker lo ferma con un errore e propone la correzione. Per le rotte,
+  chiedi una funzione `routes()` con la lista di `http.Route` e test che
+  chiamano `handle(http.Request{...})` direttamente, senza avviare il server.
 - **Librerie Python.** Fai generare le dichiarazioni a
   `pygo extern python modulo nomi...` invece di farle scrivere al modello.

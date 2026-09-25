@@ -211,8 +211,14 @@ Esempio di diagnostica (`pygo check --json`):
   risponde con `text/html`. Il checker segnala i frammenti malformati (`E0312`)
   e i valori non ammessi (`E0311`). `html.raw(s)` è l'unica via per usare
   markup senza escaping ed è pensata per markup scritto dal programma stesso.
+- **Server web**: `http.dispatch(req, routes: [...])` sceglie la prima
+  `http.Route{method: "GET", path: "/items/{id}", handler: f}` che corrisponde
+  (parametri in `req.params`, 405 e 404 automatici); `http.static` serve i
+  file del frontend con il content-type giusto, senza file nascosti né `..`;
+  `http.form`, `http.redirect`, cookie con default sicuri (`HttpOnly`,
+  `Secure`, `SameSite=Lax`) e un limite alla dimensione del body (413).
 - **Libreria standard**: `json`, `fs`, `os`, `http` (client e server con
-  shutdown graceful), `html`, `time`, `log` (JSON su stderr), `math`, `re`, `proc`,
+  shutdown graceful e routing), `html`, `time`, `log` (JSON su stderr), `math`, `re`, `proc`,
   `rand`. Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
   Pygo stesso: sono l'unica fonte di verità per checker, runtime e documentazione.
 

@@ -7,7 +7,7 @@ import (
 
 func TestGuide(t *testing.T) {
 	g := Text()
-	for _, want := range []string{"fn parse_int(text: Str) -> !Int", "fn fs.read(path: Str) -> !Str uses fs", "fn map[U](f: fn(T) -> U) -> List[U]", "struct http.Request", "fn html.raw(text: Str) -> Html", "fn http.html(status: Int, body: Html) -> Response"} {
+	for _, want := range []string{"fn parse_int(text: Str) -> !Int", "fn fs.read(path: Str) -> !Str uses fs", "fn map[U](f: fn(T) -> U) -> List[U]", "struct http.Request", "fn html.raw(text: Str) -> Html", "fn http.html(status: Int, body: Html) -> Response", "fn http.dispatch(req: Request, routes: List[Route]) -> Response", "struct http.Cookie"} {
 		if !strings.Contains(g, want) {
 			t.Errorf("guide lacks %q", want)
 		}

@@ -287,7 +287,10 @@ The effects are `fs`, `net`, `env`, `proc`, `clock`, `rand` and `python`
 - **Declaration**: a function that performs an effect directly, or calls a
   function that does, must declare it: `uses net, fs` (E0501). Declared but
   unused effects produce a warning (W0503). Effects used in lambdas count
-  toward the enclosing function.
+  toward the enclosing function, and so do the effects of a named function
+  used as a value (a callback or a route handler): whoever holds the value
+  can call it. `fn routes() -> List[http.Route] uses fs` is required when a
+  route's handler reads files.
 - **Granting at run time**: `pygo run --allow net,fs` (or `--allow all`).
   - Before starting, the runner compares `main`'s `uses` clause with the
     grants and refuses to start if something is missing (exit code 4).
@@ -400,7 +403,7 @@ the checker, the runtime, `describe` and `guide`.
 | `json` | `encode`, `decode`, `decode_as(text, schema: T)` (typed validation) |
 | `fs` | `read`, `write`, `append`, `exists`, `list`, `remove`, `mkdir` (`uses fs`) |
 | `os` | `args`, `env` (`uses env`), `exit`, `platform`, `cwd` |
-| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM; `text`, `json`, `html` helpers |
+| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM and a body limit; `dispatch` (routes with path parameters), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
 | `html` | `raw(text)`: trusted markup without escaping (§14.2) |
 | `time` | `now`, `now_ms`, `iso` (`uses clock`), `sleep` |
 | `log` | `debug`, `info`, `warn`, `error`: JSON lines on stderr |
@@ -493,6 +496,53 @@ fn page(todos: List[Todo]) -> http.Response => http.html(200, body: html"<ul>${t
 is meant for markup the program itself wrote, and is easy to find in
 review.
 
+### 14.3 HTTP server
+
+`http.serve(addr, handler: f, max_body: 1048576)` calls `f(req)` for each
+request, concurrently, until SIGINT/SIGTERM (graceful shutdown). A request
+body larger than `max_body` bytes gets `413` without calling the handler.
+A failure or panic in the handler is logged as a JSON line on stderr and
+answered with `500`; the server keeps running.
+
+`http.Request` has `method`, `path`, `query`, `headers` (lowercase names,
+first value), `body`, `params` (set by `dispatch`) and `cookies`.
+`http.Response` has `status`, `body`, `headers` and `cookies`
+(`List[http.Cookie]`, each sent as its own `Set-Cookie` header).
+`http.Cookie` defaults to `path: "/"`, `http_only: true`, `secure: true`,
+`same_site: "Lax"`; `max_age: 0` lasts until the browser closes and
+`max_age: -1` deletes the cookie. `same_site: "None"` requires
+`secure: true`; an invalid cookie is a `500` with a log line.
+
+**Routing.** `http.dispatch(req, routes: [...])` calls the handler of the
+first `http.Route{method, path, handler}` that matches:
+
+- `method` is `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE` or
+  `OPTIONS`; a `GET` route also answers `HEAD`;
+- `path` segments are literal text, `{name}` (one non-empty segment) or a
+  final `{name...}` (the rest of the path, possibly empty):
+  `/items/{id}`, `/static/{path...}`;
+- the handler receives a copy of the request with `params` set;
+- when routes match the path but not the method the result is `405` with
+  an `allow` header; otherwise `404`.
+
+Routes are tried in order, like `match` arms, so a literal route placed
+before `/items/{id}` (for example `/items/new`) takes precedence. An
+invalid method or path is a panic (R0015) the first time `dispatch` sees
+it, so tests that exercise the routes catch it.
+
+**Static files.** `http.static(req, dir: "public")` (`uses fs`) serves the
+file named by `req.params["path"]`, so its route ends with `{path...}`.
+A directory serves its `index.html`. The content type comes from a fixed
+table of extensions (the same on every OS) and `x-content-type-options:
+nosniff` is set. Paths with `..`, hidden segments (`.env`, `.git`),
+backslashes, and symlinks resolving outside `dir` give `404`. Files are
+read whole into memory.
+
+**Forms and redirects.** `http.form(req)` decodes an
+`application/x-www-form-urlencoded` body (the first value of each field)
+and fails with `E_FORM` on another content type or malformed input.
+`http.redirect(location, status: 303)` accepts 301, 302, 303, 307 and 308.
+
 ## 15. Deployment
 
 - `make dist` builds static binaries for Linux, macOS and Windows on amd64
@@ -561,6 +611,7 @@ share.
 ## 17. Roadmap
 
 - a WebAssembly backend (from the bytecode);
+- signed sessions and CSRF tokens for forms (today: `SameSite=Lax` cookies);
 - traits/interfaces;
 - `select` on multiple channels;
 - effect polymorphism for higher-order functions;
