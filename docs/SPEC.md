@@ -41,6 +41,14 @@ by `pygo guide`). This document is the complete specification.
   - `"""..."""` is a multi-line string. A newline right after the opening
     quotes is dropped.
   - `r"..."` and `r"""..."""` are raw: no escapes and no interpolation.
+  - `html"..."` and `html"""..."""` are markup literals of type `Html`:
+    interpolated values are escaped for their HTML context (§14.2).
+  - `sql"..."` and `sql"""..."""` are query literals of type `Sql`. They
+    cannot contain `${...}` (E0121): values are passed separately as query
+    parameters.
+  - `pygo fmt` prints a string whose text contains a newline in the
+    `"""..."""` form (with a newline after the opening quotes) and every
+    other string in the `"..."` form.
   - `{` and `}` are ordinary characters in strings, so JSON needs no
     escaping.
 - **Operators**: `+ - * / % == != < <= > >= = += -= *= /= %= -> => . .. ..=
@@ -88,6 +96,8 @@ struct ...   enum ...   impl ...   fn ...   test "..." { ... }
 | `Float` | IEEE-754 double |
 | `Str` | immutable Unicode text; indexing and length count runes |
 | `Bool` | `true`, `false` |
+| `Html` | trusted markup: built only by `html"..."` literals and `html.raw` (§14.2) |
+| `Sql` | trusted query text: built only by `sql"..."` literals |
 | `List[T]` | growable, mutable, reference semantics |
 | `Map[K, V]` | insertion-ordered; `K` ∈ {Int, Str, Bool, Float} |
 | `T?` | `T` or `nil`; `nil` exists only in optional types |
@@ -107,6 +117,11 @@ struct ...   enum ...   impl ...   fn ...   test "..." { ... }
   `and`/`or`/`not` must be `Bool` (E0303).
 - A value of type `T` is assignable to `T?` and to `Any`. `T?` is not
   assignable to `T` (E0301 or E0310).
+- `Str` is not assignable to `Html` or `Sql` (E0301). When the value is a
+  plain string literal, the diagnostic carries a fix that adds the
+  `html`/`sql` prefix (safe without interpolation). `Html` and `Sql` cannot
+  be decoded from JSON (`E_SCHEMA`) or returned by Python (`E_PYTHON_TYPE`),
+  so untrusted text never becomes trusted. `str(x)` gives their text.
 - Local types are inferred from initializers. Parameters, results and
   fields are always annotated. Empty collections and `nil` need an
   annotation: `let xs: List[Int] = []`, `var u: User? = nil`.
@@ -341,7 +356,7 @@ must be covered by unguarded arms, or there must be a final catch-all
 | `disasm [--json] [--fn name]` | the bytecode of a `.pg` or `.pgc` file |
 | `test --json` | `{ok, passed, failed, tests[{name, file, line, passed, ms, failure?}]}` |
 | `explain CODE` | description with wrong/right examples |
-| `guide` | compact reference + stdlib signatures (~2.6k tokens) |
+| `guide` | compact reference + stdlib signatures (~3.1k tokens) |
 | `describe`, `outline`, `ast` | API, symbols with content hashes, AST — all JSON |
 | `edit --replace KEY` | replaces a whole declaration (`fn:x`, `struct:X`, `impl:X`, `test:name`, `let:X`, `import:path`, `extern:name`); `--expect-hash` guards against stale edits |
 | `extern python MODULE [NAME...]` | draft `extern` block generated from the real Python signatures and type hints |
@@ -385,7 +400,8 @@ the checker, the runtime, `describe` and `guide`.
 | `json` | `encode`, `decode`, `decode_as(text, schema: T)` (typed validation) |
 | `fs` | `read`, `write`, `append`, `exists`, `list`, `remove`, `mkdir` (`uses fs`) |
 | `os` | `args`, `env` (`uses env`), `exit`, `platform`, `cwd` |
-| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM; `text`, `json` helpers |
+| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM; `text`, `json`, `html` helpers |
+| `html` | `raw(text)`: trusted markup without escaping (§14.2) |
 | `time` | `now`, `now_ms`, `iso` (`uses clock`), `sleep` |
 | `log` | `debug`, `info`, `warn`, `error`: JSON lines on stderr |
 | `math` | `pi`, `e`, `sqrt`, `pow`, `abs`, `floor`, `ceil`, `round`, ... |
@@ -443,6 +459,39 @@ extern python "module.path" [as name] {
   - `E_PYTHON_IMPORT`: the message suggests `pip install`;
   - `E_PYTHON_TYPE`;
   - `E_PYTHON_UNAVAILABLE`: Python was not found, or the worker exited.
+
+### 14.2 HTML
+
+Markup is a value of type `Html`, written as `html"..."` or
+`html"""..."""`. The literal text is trusted; every `${expr}` is escaped
+according to where it appears, with the rules of Go's `html/template`:
+
+- in text: `<`, `>`, `&`, quotes become entities;
+- in attribute values: quoted and escaped;
+- in URL attributes (`href`, `src`, ...): percent-encoded, and a value with
+  an unsafe scheme such as `javascript:` is replaced by `#ZgotmplZ`;
+- inside `<script>`: a JavaScript value (a Str becomes a quoted, escaped
+  string; Int and Float become numbers);
+- inside `<style>` or `style="..."`: filtered CSS values.
+
+Interpolated values may be `Str`, `Int`, `Float`, `Bool` (escaped),
+`Html` (inserted as it is) and `List[Html]` (concatenated); other types
+are E0311. A format spec (`${price:.2}`) formats the value first, then
+escapes the resulting text. Each literal must be a well-formed fragment:
+the checker compiles it and reports E0312 when it ends inside a tag,
+attribute, comment, script or style, or when a value is in a position
+that cannot be escaped. HTML comments in the literal text are dropped.
+
+```
+fn row(t: Todo) -> Html => html"<li class='${t.state}'>${t.title}</li>"
+fn page(todos: List[Todo]) -> http.Response => http.html(200, body: html"<ul>${todos.map(row)}</ul>")
+```
+
+`http.html(status, body: Html)` builds a response with content type
+`text/html; charset=utf-8`. `html.raw(text: Str) -> Html` (module
+`html`) is the only way to turn a `Str` into markup without escaping; it
+is meant for markup the program itself wrote, and is easy to find in
+review.
 
 ## 15. Deployment
 

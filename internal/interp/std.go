@@ -168,6 +168,17 @@ func init() {
 			h.Set("content-type", "application/json")
 			return th.httpResponse(a[0].(int64), b.String(), h), nil
 		},
+		"html": func(th *Thread, _ Value, a []Value) (Value, error) {
+			h := NewMap()
+			h.Set("content-type", "text/html; charset=utf-8")
+			return th.httpResponse(a[0].(int64), string(a[1].(HtmlStr)), h), nil
+		},
+	})
+
+	register("html", map[string]BuiltinFn{
+		"raw": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return HtmlStr(a[0].(string)), nil
+		},
 	})
 
 	register("time", map[string]BuiltinFn{
@@ -590,10 +601,10 @@ func encodeJSON(b *bytes.Buffer, v Value, indent, depth int) error {
 			}
 			b.WriteString(s)
 		}
-	case string:
+	case string, HtmlStr, SqlStr:
 		enc := json.NewEncoder(b)
 		enc.SetEscapeHTML(false)
-		if err := enc.Encode(x); err != nil {
+		if err := enc.Encode(Str(x)); err != nil {
 			return err
 		}
 		b.Truncate(b.Len() - 1) // drop the newline added by Encode
@@ -749,6 +760,9 @@ func (th *Thread) convert(v Value, te *ast.TypeExpr, m *Module, path string) (Va
 			return v, ""
 		}
 		return bad()
+	case "Html", "Sql":
+		// trusted text comes only from literals, never from data
+		return nil, fmt.Sprintf("%s: %s cannot come from data; build it with a %s\"...\" literal", path, te.Name, strings.ToLower(te.Name))
 	case "List":
 		l, ok := v.(*List)
 		if !ok {

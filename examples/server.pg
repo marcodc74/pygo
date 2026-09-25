@@ -18,14 +18,25 @@ fn catalog() -> List[Item] {
 
 fn find(items: List[Item], id: Int) -> Item? => items.find(fn(it) => it.id == id)
 
-/// Routes: GET /healthz, GET /items, GET /items?id=N
+/// Routes: GET / (HTML page), GET /healthz, GET /items, GET /items?id=N
 fn handle(req: http.Request) -> http.Response {
     log.info("request", fields: {"method": req.method, "path": req.path})
     return match req.path {
+        "/" => http.html(200, body: page(catalog()))
         "/healthz" => http.text(200, body: "ok")
         "/items" => items_route(req)
         _ => http.json(404, body: {"error": "not found", "path": req.path})
     }
+}
+
+/// One table row; every value is escaped for where it appears.
+fn row(it: Item) -> Html => html"<tr><td><a href='/items?id=${it.id}'>${it.name}</a></td><td>${it.price:.2}</td></tr>"
+
+fn page(items: List[Item]) -> Html {
+    return html"""
+<!doctype html>
+<title>Catalog</title>
+<table>${items.map(row)}</table>"""
 }
 
 fn items_route(req: http.Request) -> http.Response {
@@ -62,4 +73,10 @@ test "routing" {
     assert res.body.contains("keyboard")
     let missing = handle(http.Request{method: "GET", path: "/nope", query: {}, headers: {}, body: ""})
     assert missing.status == 404
+}
+
+test "html page escapes item names" {
+    let html_page = str(page([Item{id: 3, name: "<b>pen</b>", price: 1.5}]))
+    assert html_page.contains("<a href='/items?id=3'>&lt;b&gt;pen&lt;/b&gt;</a>")
+    assert html_page.contains("<td>1.50</td>")
 }

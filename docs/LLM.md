@@ -5,7 +5,7 @@ visto durante l'addestramento. Qualunque modello lo usa bene se ha due cose:
 
 1. **Il riferimento del linguaggio nel contesto.** È l'output di
    `pygo guide`: sintassi, tipi, errori, effetti e tutte le firme della stdlib,
-   in circa 3.000 token.
+   in circa 3.100 token.
 2. **Il ciclo con il toolchain.** Il modello scrive il programma, poi
    `pygo check --json`, `pygo fix`, `pygo test --json` e `pygo run --json`, e
    corregge leggendo i codici e gli hint.
@@ -310,6 +310,11 @@ Il codice generato da un modello va trattato come non fidato.
   `pygo_tools` concede solo le capability dichiarate dall'host in `allow_caps`.
 - **Budget e timeout.** `--max-steps` e `--timeout` fermano cicli infiniti
   e programmi lenti.
+- **HTML senza XSS per costruzione.** Le pagine si scrivono con `html"..."`
+  (tipo `Html`): ogni valore interpolato viene escapato secondo il contesto,
+  e il checker rifiuta una `Str` dove serve `Html`. L'unica eccezione è
+  `html.raw(s)`: in revisione basta cercare `html.raw` per trovare tutti i
+  punti in cui del testo diventa markup senza escaping.
 - **`python` equivale a concedere tutto**, perché il codice Python non ha
   sandbox. Non concederlo a codice non fidato.
 - **In produzione**, esegui i tool dentro un container. Usa l'immagine
@@ -331,5 +336,9 @@ Il codice generato da un modello va trattato come non fidato.
   dà l'esempio sbagliato e quello giusto.
 - **Modifiche per simbolo.** Per file grandi, `pygo outline` + `pygo edit
   --replace fn:nome --expect-hash H` evitano diff riga per riga fragili.
+- **Pagine web.** Chiedi di costruire l'HTML con funzioni piccole che
+  restituiscono `Html` (`fn riga(t: Todo) -> Html => html"..."`) e di
+  comporle con `${lista.map(riga)}`. Se il modello concatena stringhe, il
+  checker lo ferma con un errore e propone la correzione.
 - **Librerie Python.** Fai generare le dichiarazioni a
   `pygo extern python modulo nomi...` invece di farle scrivere al modello.

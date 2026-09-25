@@ -71,6 +71,8 @@ type StrPart struct {
 type StrLit struct {
 	Pos   Pos
 	Parts []StrPart
+	Kind  string // "" for Str, "html" for html"..." (Html), "sql" for sql"..." (Sql)
+	Raw   bool   // written as r"..." (fmt prints the escaped form)
 }
 
 type ListLit struct {

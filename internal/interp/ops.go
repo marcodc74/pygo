@@ -264,6 +264,12 @@ func (th *Thread) typeMatches(v Value, te *ast.TypeExpr, m *Module, tparams map[
 	case "Bool":
 		_, ok := v.(bool)
 		return ok
+	case "Html":
+		_, ok := v.(HtmlStr)
+		return ok
+	case "Sql":
+		_, ok := v.(SqlStr)
+		return ok
 	case "List":
 		_, ok := v.(*List)
 		return ok

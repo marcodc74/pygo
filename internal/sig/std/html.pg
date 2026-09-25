@@ -1,0 +1,6 @@
+/// Safe HTML. Markup is written as html"..." literals (type Html): every ${x}
+/// is escaped for its context (text, attribute, URL, script, style), an Html
+/// value is inserted as it is, a List[Html] is concatenated.
+/// raw marks text as trusted markup WITHOUT escaping: use it only for markup
+/// you wrote or sanitized yourself, never for user input.
+fn raw(text: Str) -> Html {}

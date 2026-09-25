@@ -7,6 +7,7 @@ import (
 
 	"github.com/marcodc74/pygo/internal/ast"
 	"github.com/marcodc74/pygo/internal/printer"
+	"github.com/marcodc74/pygo/internal/safehtml"
 	"github.com/marcodc74/pygo/internal/sig"
 )
 
@@ -175,12 +176,82 @@ func (c *Checker) mismatch(pos ast.Pos, got, want *Type, where string) {
 		hint = "no implicit conversions: use int(x) (truncates) or math.round(x)"
 	case got.K == KStr && (want.K == KInt || want.K == KFloat):
 		hint = "parse it: try parse_int(s) / try parse_float(s)"
+	case got.K == KStr && want.K == KHtml:
+		hint = `write markup as html"..." (values in ${} are escaped); html.raw(s) marks trusted text`
+	case got.K == KStr && want.K == KSql:
+		hint = `write the query as sql"..." with ? placeholders and pass the values in args: [...]`
 	case want.K == KStr:
 		hint = "convert with str(x) or interpolate \"${x}\""
 	case got.K == KFn && want.K == KFn && got.Fallible && !want.Fallible:
 		hint = "the function can fail but a non-fallible function is expected"
 	}
 	c.errorf("E0301", pos, hint, "type mismatch %s: expected %s, got %s", where, want, got)
+	if lit := c.plainLit; lit != nil && lit.Pos == pos && !lit.Raw && got.K == KStr && (want.K == KHtml || want.K == KSql) {
+		c.plainLit = nil
+		interpolated := false
+		for _, p := range lit.Parts {
+			interpolated = interpolated || p.Expr != nil
+		}
+		switch {
+		case !interpolated:
+			c.fix(pos, 0, strings.ToLower(want.String()), true)
+		case want.K == KHtml:
+			// escaping now applies to the interpolated values: review it
+			c.fix(pos, 0, "html", false)
+		}
+	}
+}
+
+// htmlLit checks an html"..." literal: the interpolated values and the
+// structure of the markup (contexts are checked by html/template).
+func (c *Checker) htmlLit(fc *fnCtx, sc *scope, e *ast.StrLit) {
+	for _, p := range e.Parts {
+		if p.Expr == nil {
+			continue
+		}
+		t := c.expr(fc, sc, p.Expr, nil)
+		if hint, ok := htmlPart(t, p.Format != ""); !ok {
+			c.errorf("E0311", p.Expr.P(), hint, "cannot interpolate %s in an html literal", t)
+		}
+	}
+	if _, err := safehtml.Compile(e.Parts); err != nil {
+		hint := ""
+		if se, ok := err.(*safehtml.Error); ok {
+			hint = se.Hint
+		}
+		c.errorf("E0312", e.Pos, hint, "%s", err)
+	}
+}
+
+// htmlPart reports whether a value of type t may be interpolated in an
+// html literal (formatted: it has a format spec).
+func htmlPart(t *Type, formatted bool) (string, bool) {
+	if isUnknown(t) {
+		return "", true
+	}
+	const onlyScalars = "format specs apply to Str, Int, Float and Bool"
+	switch t.K {
+	case KStr, KInt, KFloat, KBool:
+		return "", true
+	case KHtml:
+		if formatted {
+			return onlyScalars, false
+		}
+		return "", true
+	case KList:
+		if formatted {
+			return onlyScalars, false
+		}
+		if isUnknown(t.Elem) || t.Elem.K == KHtml {
+			return "", true
+		}
+		return `build the items as Html: xs.map(fn(x) => html"<li>${x}</li>")`, false
+	case KOpt:
+		return "the value may be nil: use x ?? default", false
+	case KVoid:
+		return "the expression has no value", false
+	}
+	return "convert it with str(x)", false
 }
 
 func (c *Checker) assign(fc *fnCtx, sc *scope, s *ast.Assign) {
@@ -320,6 +391,13 @@ func (c *Checker) expr1(fc *fnCtx, sc *scope, e ast.Expr, want *Type) *Type {
 	case *ast.NilLit:
 		return tNil
 	case *ast.StrLit:
+		switch e.Kind {
+		case "html":
+			c.htmlLit(fc, sc, e)
+			return tHtml
+		case "sql":
+			return tSql
+		}
 		for _, p := range e.Parts {
 			if p.Expr != nil {
 				t := c.expr(fc, sc, p.Expr, nil)
@@ -327,6 +405,9 @@ func (c *Checker) expr1(fc *fnCtx, sc *scope, e ast.Expr, want *Type) *Type {
 					c.errorf("E0301", p.Expr.P(), "", "interpolated expression has no value")
 				}
 			}
+		}
+		if want != nil && (want.K == KHtml || want.K == KSql) {
+			c.plainLit = e
 		}
 		return tStr
 	case *ast.Ident:
@@ -920,6 +1001,8 @@ func (c *Checker) arith(pos ast.Pos, op string, xt, yt *Type) *Type {
 		hint = "no implicit conversions: use float(n) or int(x)"
 	case xt.K == KStr || yt.K == KStr:
 		hint = "build strings with interpolation: \"${a}${b}\""
+	case xt.K == KHtml || yt.K == KHtml:
+		hint = `compose markup with interpolation: html"${a}${b}"`
 	}
 	c.errorf("E0302", pos, hint, "operator '%s' is not defined for %s and %s", op, xt, yt)
 	return tAny

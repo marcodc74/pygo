@@ -30,6 +30,7 @@ Ogni scelta di progetto risponde a un limite concreto degli LLM.
 | Dimentica di gestire gli errori | `-> !T` indica una funzione che può fallire; chiamarla senza `try` o `catch` è un errore di compilazione (`E0401`) |
 | Dimentica i `nil` | `nil` esiste solo nei tipi `T?`; usare un `T?` senza controllarlo è un errore (`E0310`), con narrowing su `if x != nil` |
 | Codice generato = codice non fidato | Gli effetti sono capability (`uses fs, net`) verificate staticamente e a runtime; di default è tutto negato e si abilita con `--allow` |
+| Costruisce HTML concatenando stringhe (XSS) | Il markup ha un tipo proprio, `Html`, che si scrive solo con `html"..."`: ogni `${x}` viene escapato secondo il contesto (testo, attributo, URL, script). Una `Str` non diventa mai `Html` (`E0301`, con correzione automatica) |
 | Cicli infiniti durante i tentativi | `--max-steps` (budget deterministico) e `--timeout` |
 | Lavora a cicli scrivi → esegui → correggi | Diagnostica JSON con codici stabili, hint e correzioni applicabili; panic in JSON con i valori delle variabili coinvolte; contratti `requires`/`ensures`; `test` inline |
 | Errori non riproducibili | Mappe ordinate, `rand` con seme, orologio come effetto esplicito, overflow degli interi = errore |
@@ -160,7 +161,7 @@ Comandi pensati per un agente (tutti con output JSON):
 
 | Comando | A cosa serve |
 |---|---|
-| `pygo guide` | Specifica compatta del linguaggio e firme della stdlib (~2.600 token), da mettere nel contesto del modello |
+| `pygo guide` | Specifica compatta del linguaggio e firme della stdlib (~3.100 token), da mettere nel contesto del modello |
 | `pygo check --json` | Diagnostica con codice stabile, hint e correzione applicabile (`fix`) |
 | `pygo fix [--all]` | Applica le correzioni: sicure di default, anche i "did you mean" con `--all` |
 | `pygo explain E0306` | Spiega un codice con esempio sbagliato e corretto |
@@ -192,7 +193,7 @@ Esempio di diagnostica (`pygo check --json`):
 ## Il linguaggio in breve
 
 - **Tipi**: `Int` (64 bit, con controllo dell'overflow), `Float`, `Str`, `Bool`,
-  `List[T]`, `Map[K, V]` (ordinata), `T?`, `fn(A) -> !B`, `Chan[T]`, `Task[T]`,
+  `Html` (markup sicuro), `List[T]`, `Map[K, V]` (ordinata), `T?`, `fn(A) -> !B`, `Chan[T]`, `Task[T]`,
   `Error`, `Any`, più `struct`, `enum` con payload, `impl` con metodi e funzioni
   generiche `fn first[T](xs: List[T]) -> T?`.
 - **Variabili**: `let` (immutabile) e `var` (mutabile).
@@ -204,8 +205,14 @@ Esempio di diagnostica (`pygo check --json`):
 - **Stringhe**: `"ciao ${nome}"`, `"${x:.2}"`, `"${n:>5}"`; `r"..."` e
   `"""..."""` per il testo raw o su più righe. `{` e `}` sono caratteri normali,
   quindi il JSON dentro una stringa non va escapato.
+- **HTML**: `html"<li class='${stato}'>${titolo}</li>"` è di tipo `Html` e
+  escapa ogni valore secondo il contesto. `Html` e `List[Html]` si inseriscono
+  così come sono, per comporre le pagine; `http.html(200, body: pagina)`
+  risponde con `text/html`. Il checker segnala i frammenti malformati (`E0312`)
+  e i valori non ammessi (`E0311`). `html.raw(s)` è l'unica via per usare
+  markup senza escaping ed è pensata per markup scritto dal programma stesso.
 - **Libreria standard**: `json`, `fs`, `os`, `http` (client e server con
-  shutdown graceful), `time`, `log` (JSON su stderr), `math`, `re`, `proc`,
+  shutdown graceful), `html`, `time`, `log` (JSON su stderr), `math`, `re`, `proc`,
   `rand`. Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
   Pygo stesso: sono l'unica fonte di verità per checker, runtime e documentazione.
 
@@ -309,6 +316,7 @@ internal/parser     parser a discesa ricorsiva con recupero dagli errori
 internal/ast        AST, visitor, export JSON
 internal/sig        firme della stdlib (file .pg incorporati nel binario)
 internal/check      checker statico: nomi, tipi, fallibilità, effetti, nil, esaustività, correzioni
+internal/safehtml   compilazione dei letterali html"..." con l'escaping di html/template
 internal/interp     runtime: valori thread-safe, stdlib, goroutine per spawn/chan;
                     la VM a bytecode (vm_compile.go compila, vm.go esegue,
                     pgc.go è il formato .pgc, disasm.go il disassemblatore)

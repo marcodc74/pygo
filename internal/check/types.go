@@ -17,6 +17,8 @@ const (
 	KFloat
 	KStr
 	KBool
+	KHtml // trusted markup: html"..." literals, html.raw
+	KSql  // trusted query text: sql"..." literals
 	KNil
 	KList
 	KMap
@@ -52,6 +54,8 @@ var (
 	tInt   = &Type{K: KInt}
 	tFloat = &Type{K: KFloat}
 	tStr   = &Type{K: KStr}
+	tHtml  = &Type{K: KHtml}
+	tSql   = &Type{K: KSql}
 	tBool  = &Type{K: KBool}
 	tNil   = &Type{K: KNil}
 	tRange = &Type{K: KRange}
@@ -87,6 +91,10 @@ func (t *Type) String() string {
 		return "Str"
 	case KBool:
 		return "Bool"
+	case KHtml:
+		return "Html"
+	case KSql:
+		return "Sql"
 	case KNil:
 		return "nil"
 	case KVoid:

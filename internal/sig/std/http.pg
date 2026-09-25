@@ -12,3 +12,5 @@ fn serve(addr: Str, handler: fn(Request) -> Response) -> ! uses net {}
 fn text(status: Int, body: Str) -> Response {}
 /// JSON response (body is encoded with json.encode).
 fn json(status: Int, body: Any) -> Response {}
+/// HTML page or fragment (content-type text/html; charset=utf-8); build body with html"...".
+fn html(status: Int, body: Html) -> Response {}

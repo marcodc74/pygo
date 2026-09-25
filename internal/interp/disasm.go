@@ -159,6 +159,8 @@ func instrNote(p *Proto, in Instr) string {
 		if s, ok := aux(in.A).(*ast.StructLit); ok && int(in.B) < len(s.Fields) {
 			return printer.Expr(s.Type) + "." + s.Fields[in.B].Name
 		}
+	case OpHtml:
+		return fmt.Sprintf("%d values", in.B)
 	case OpFormatPart:
 		if s, ok := aux(in.A).(*ast.StrLit); ok && int(in.B) < len(s.Parts) && s.Parts[in.B].Format != "" {
 			return ":" + s.Parts[in.B].Format

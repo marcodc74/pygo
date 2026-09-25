@@ -15,7 +15,7 @@ Workflow: write file.pg → `pygo check --json file.pg` → `pygo fix file.pg` (
 - Literals: `42 1_000 0xff 3.14 1e-9 true false nil [1, 2] {"k": 1}`; empty map `{}`.
 
 ## Types
-`Int` (64-bit, overflow = panic) `Float` `Str` (runes) `Bool` `List[T]` `Map[K, V]` (insertion ordered; keys Int/Str/Bool/Float) `T?` (optional, the only place nil exists) `fn(A, B) -> R` `fn(A) -> !R` `Chan[T]` `Task[T]` `Range` `Error` `Any`.
+`Int` (64-bit, overflow = panic) `Float` `Str` (runes) `Bool` `Html` (safe markup, see HTML) `List[T]` `Map[K, V]` (insertion ordered; keys Int/Str/Bool/Float) `T?` (optional, the only place nil exists) `fn(A, B) -> R` `fn(A) -> !R` `Chan[T]` `Task[T]` `Range` `Error` `Any`.
 - No implicit conversions: `float(n)`, `int(x)` (truncates), `str(x)`, `try parse_int(s)`, `try parse_float(s)`.
 - No truthiness: conditions are Bool (`not xs.is_empty()`, `x != nil`).
 - Nil safety: using a `T?` value requires a check. `if x != nil { x.len() }`, `if x == nil { return }` then x is non-nil, or `x ?? default`.
@@ -74,11 +74,20 @@ Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effect
 ## Concurrency
 `let t = spawn work(x)` → `Task[T]`; `try t.wait()`; `try wait_all(tasks)`. Channels: `let ch = chan(10)`, `ch.send(v)`, `ch.recv()` (T?, nil when closed), `ch.close()`, `for v in ch { }`. Lists/maps are thread-safe; prefer channels to shared state.
 
+## HTML
+Markup has type `Html` and is written ONLY as `html"..."` / `html"""..."""`. Each `${x}` is escaped for where it appears (text, attribute, URL, `<script>`); an `Html` value is inserted as it is; a `List[Html]` is concatenated. `${}` accepts Str Int Float Bool Html List[Html]. A `Str` never becomes `Html`, so injected markup is impossible.
+```
+fn row(u: User) -> Html => html"<li data-age='${u.age}'>${u.name}</li>"
+fn page(users: List[User]) -> http.Response => http.html(200, body: html"<ul>${users.map(row)}</ul>")
+```
+- Each literal is a complete fragment: close tags, quotes and comments inside it (E0312). Use `'` for attributes in one-line literals, or `"""`.
+- `html.raw(s)` (`import "html"`) marks text as markup WITHOUT escaping: only for markup you wrote, never for input.
+
 ## Tests
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.
 
 ## Modules
-`import "json"` (stdlib: json fs os http time log math re proc rand), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
+`import "json"` (stdlib: json fs os http html time log math re proc rand), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
 
 ## Python libraries (extern)
 Declare exactly what you use; the checker validates calls like any Pygo function:

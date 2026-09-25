@@ -243,6 +243,8 @@ func pyEncode(v Value, depth int) (any, error) {
 	switch x := v.(type) {
 	case nil, bool, int64, string:
 		return x, nil
+	case HtmlStr, SqlStr:
+		return Str(x), nil
 	case float64:
 		return pyFloat(x), nil
 	case *List:
