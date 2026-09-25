@@ -324,6 +324,7 @@ type fieldInfo struct {
 }
 
 type structInfo struct {
+	opaque  bool // handle to a foreign object (extern type): no fields, no literal
 	name    string
 	decl    *ast.StructDecl
 	fields  []*fieldInfo
@@ -332,7 +333,7 @@ type structInfo struct {
 }
 
 func (s *structInfo) qualName() string {
-	if s.mod != nil && s.mod.std && s.mod.name != "core" {
+	if s.mod != nil && ((s.mod.std && s.mod.name != "core") || s.mod.extern != nil) {
 		return s.mod.name + "." + s.name
 	}
 	return s.name
@@ -371,6 +372,7 @@ func (e *enumInfo) variant(name string) *variantInfo {
 }
 
 type modInfo struct {
+	extern  *ast.ExternDecl // non-nil for extern python blocks
 	name    string
 	path    string
 	std     bool

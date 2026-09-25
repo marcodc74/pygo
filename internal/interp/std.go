@@ -713,12 +713,18 @@ func (th *Thread) convert(v Value, te *ast.TypeExpr, m *Module, path string) (Va
 		}
 		return nil, fmt.Sprintf("%s: expected %s, got null", path, te.Name)
 	}
+	if big, ok := v.(pyBigInt); ok {
+		if te.Name == "Any" {
+			return string(big), ""
+		}
+		return nil, fmt.Sprintf("%s: integer %s does not fit Int (64-bit)", path, string(big))
+	}
 	bad := func() (Value, string) {
 		return nil, fmt.Sprintf("%s: expected %s, got %s", path, te.Name, jsonKind(v))
 	}
 	switch te.Name {
 	case "Any":
-		return v, ""
+		return sanitizeAny(v), ""
 	case "Int":
 		if _, ok := v.(int64); ok {
 			return v, ""
@@ -790,6 +796,17 @@ func (th *Thread) convert(v Value, te *ast.TypeExpr, m *Module, path string) (Va
 	}
 	obj, isObj := v.(*Map)
 	switch t := t.(type) {
+	case *ExternType:
+		h, ok := v.(*PyHandle)
+		if !ok {
+			return bad()
+		}
+		if h.T == nil {
+			h.T = t
+		} else if h.T != t {
+			return nil, fmt.Sprintf("%s: expected %s, got %s", path, t.Name, h.T.Name)
+		}
+		return h, ""
 	case *StructType:
 		if !isObj {
 			return bad()
@@ -841,8 +858,32 @@ func (th *Thread) convert(v Value, te *ast.TypeExpr, m *Module, path string) (Va
 	return v, ""
 }
 
+// sanitizeAny replaces transient bridge values (huge ints) inside Any data.
+func sanitizeAny(v Value) Value {
+	switch x := v.(type) {
+	case pyBigInt:
+		return string(x)
+	case *List:
+		items := x.Snapshot()
+		for i, it := range items {
+			items[i] = sanitizeAny(it)
+		}
+		return NewList(items)
+	case *Map:
+		ks, vs := x.Items()
+		m := NewMap()
+		for i := range ks {
+			m.Set(ks[i], sanitizeAny(vs[i]))
+		}
+		return m
+	}
+	return v
+}
+
 func jsonKind(v Value) string {
-	switch v.(type) {
+	switch x := v.(type) {
+	case *PyHandle:
+		return "Python object " + x.PyType
 	case *Map:
 		return "object"
 	case *List:

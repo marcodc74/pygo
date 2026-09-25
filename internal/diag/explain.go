@@ -67,6 +67,10 @@ var Explanations = map[string]Explanation{
 	"E0603": {Title: "unknown variant", Detail: "The enum has no variant with this name."},
 	"E0604": {Title: "variant arity", Detail: "A variant pattern must have one sub-pattern per field (use _ to ignore one)."},
 
+	"E0120": {Title: "unsupported foreign language", Detail: "extern blocks support Python only: extern python \"module\" { ... }."},
+	"E0610": {Title: "extern function not fallible", Detail: "A call into Python can always raise an exception, so every extern function and method must be declared -> !T.", Wrong: "extern python \"math\" { fn sqrt(x: Float) -> Float }", Right: "extern python \"math\" { fn sqrt(x: Float) -> !Float }"},
+	"E0611": {Title: "foreign object literal", Detail: "An extern type is a handle to an object that lives in Python: obtain it from an extern function, it cannot be built with a literal."},
+	"E0612": {Title: "extern method without self", Detail: "Methods declared inside an extern type take self as first parameter: type DataFrame { fn head(self, n: Int = 5) -> !DataFrame }."},
 	"E0701": {Title: "non-exhaustive match", Detail: "Every possible value must be matched. For enums list all variants (the message names the missing ones); otherwise add a final '_ => ...' arm."},
 	"W0702": {Title: "unreachable arm", Detail: "An earlier arm already matches everything."},
 

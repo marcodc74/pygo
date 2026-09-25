@@ -321,6 +321,9 @@ func (th *Thread) typeMatches(v Value, te *ast.TypeExpr, m *Module, tparams map[
 	case *EnumType:
 		en, ok := v.(*Enum)
 		return ok && en.V.Enum == t
+	case *ExternType:
+		h, ok := v.(*PyHandle)
+		return ok && (h.T == nil || h.T == t)
 	}
 	return true // unknown names (type parameters) are not checked at runtime
 }

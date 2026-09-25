@@ -554,6 +554,10 @@ func (c *Checker) structLit(fc *fnCtx, sc *scope, e *ast.StructLit) *Type {
 		return tAny
 	}
 	si := tt.Elem.Struct
+	if si.opaque {
+		c.errorf("E0611", e.Pos, "obtain it from a function of the extern module", "%s is a foreign object type and cannot be built with a literal", si.qualName())
+		return tt.Elem
+	}
 	seen := map[string]bool{}
 	var names []string
 	for _, f := range si.fields {
@@ -1067,6 +1071,8 @@ func (c *Checker) resolveCallee(fc *fnCtx, sc *scope, fnExpr ast.Expr) *callee {
 func (c *Checker) call(fc *fnCtx, sc *scope, e *ast.Call, inSpawn bool) *Type {
 	cl := c.resolveCallee(fc, sc, e.Fn)
 	if cl.unknown {
+		// the callee is unknown (Any, or an error was reported): it may fail
+		c.fallibleCalls++
 		for _, a := range e.Args {
 			c.expr(fc, sc, a.Value, nil)
 		}

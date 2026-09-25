@@ -38,7 +38,7 @@ var Keywords = map[string]bool{
 	"as": true, "test": true, "assert": true, "fail": true, "try": true,
 	"catch": true, "spawn": true, "defer": true, "uses": true, "requires": true,
 	"ensures": true, "true": true, "false": true, "nil": true, "and": true,
-	"or": true, "not": true,
+	"or": true, "not": true, "extern": true,
 }
 
 // StrPart is a piece of a string literal: either literal text or an

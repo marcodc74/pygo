@@ -1,0 +1,41 @@
+/// Using Python libraries from Pygo: typed extern declarations, the python
+/// capability and Python objects kept as handles.
+///   pygo run --allow python examples/python_stats.pg
+extern python "statistics" {
+    fn mean(data: List[Float]) -> !Float
+    fn stdev(data: List[Float]) -> !Float
+    fn quantiles(data: List[Float], n: Int = 4) -> !List[Float]
+}
+
+extern python "collections" {
+    /// Python's Counter: it stays in Python, Pygo holds a handle.
+    type Counter {
+        fn most_common(self, n: Int? = nil) -> !List[List[Any]]
+    }
+    fn Counter(items: List[Str]) -> !Counter
+}
+
+/// Summary of a numeric sample, computed by Python's statistics module.
+fn summary(xs: List[Float]) -> !Str uses python {
+    let m = try statistics.mean(xs)
+    let s = try statistics.stdev(xs)
+    let q = try statistics.quantiles(xs, n: 4)
+    return "mean ${m:.2} stdev ${s:.2} quartiles ${q}"
+}
+
+fn main() -> ! uses python {
+    print(try summary([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]))
+    let words = "the cat and the hat and the bat".split(" ")
+    let counts = try collections.Counter(words)
+    print("top words:", try counts.most_common(n: 2))
+    let one = statistics.stdev([1.0]) catch e {
+        print("error from Python:", e.code, e.message)
+        0.0
+    }
+    print("stdev of a single value:", one)
+}
+
+test "summary uses Python" {
+    let s = try summary([1.0, 2.0, 3.0, 4.0])
+    assert s.starts_with("mean 2.50")
+}

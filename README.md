@@ -167,6 +167,7 @@ Comandi pensati per un agente (tutti con output JSON):
 | `pygo fmt [-w]` | Forma canonica unica |
 | `pygo ast file.pg` | AST in JSON |
 | `pygo build -o app file.pg` | Eseguibile autonomo (runtime + sorgente); con `--runtime` si può usare un binario compilato per un altro OS |
+| `pygo extern python MODULE` | Genera le dichiarazioni `extern` di una libreria Python dalle sue firme reali |
 
 Exit code stabili: `0` ok, `1` failure non gestita in `main`, `2` panic,
 `3` errore di compilazione, `4` capability non concessa.
@@ -203,6 +204,48 @@ Esempio di diagnostica (`pygo check --json`):
   `rand`. Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
   Pygo stesso: sono l'unica fonte di verità per checker, runtime e documentazione.
 
+## Librerie Python
+
+Pygo può usare qualunque libreria Python (stdlib, numpy, pandas, requests…). Dichiari
+**esattamente** cosa usi, con i tipi, e il checker controlla le chiamate come per la stdlib:
+il modello non può inventare funzioni o sbagliare l'ordine degli argomenti.
+
+```
+extern python "statistics" {
+    fn mean(data: List[Float]) -> !Float
+}
+
+extern python "collections" {
+    type Counter {                                   // oggetto che resta in Python
+        fn most_common(self, n: Int? = nil) -> !List[List[Any]]
+    }
+    fn Counter(items: List[Str]) -> !Counter
+}
+
+fn main() -> ! uses python {
+    print(try statistics.mean([2.0, 4.0, 9.0]))
+    let c = try collections.Counter(["a", "b", "a"])
+    print(try c.most_common(n: 1))
+}
+```
+
+```sh
+pygo run --allow python app.pg                      # Python non gira senza questo permesso
+pygo extern python statistics mean stdev            # genera le dichiarazioni dalle firme Python
+```
+
+- **Fallibilità:** ogni funzione Python è fallibile (`-> !T`). Le eccezioni diventano errori
+  gestibili con `try`/`catch`: `E_PYTHON` riporta il traceback, mentre `E_PYTHON_IMPORT`
+  suggerisce il `pip install` da fare.
+- **Controllo dei risultati:** i valori restituiti vengono verificati contro i tipi dichiarati
+  (`E_PYTHON_TYPE`). Gli oggetti complessi restano in Python come *handle* con i loro metodi.
+- **Esecuzione:** Python gira in un processo separato. Serve Python 3 installato (`--python`
+  o `PYGO_PYTHON` per sceglierlo), oppure l'immagine Docker `app-python`.
+- **Sicurezza:** concedere `python` equivale a concedere tutto, perché Python può usare file e
+  rete. Inoltre il budget di passi non copre il codice Python, mentre `--timeout` sì.
+
+Esempio completo: [`examples/python_stats.pg`](examples/python_stats.pg). Dettagli in `docs/SPEC.md` §14.1.
+
 ## Deploy: ogni sistema operativo, Docker, Kubernetes
 
 ```sh
@@ -213,6 +256,7 @@ make dist        # binari statici in dist/: linux, darwin, windows × amd64, arm
 docker build -f deploy/Dockerfile -t pygo-app .                    # immagine dell'app (16 MB, distroless, non-root)
 docker build -f deploy/Dockerfile --build-arg APP=mio.pg --build-arg ALLOW=net -t mia-app .
 docker build -f deploy/Dockerfile --target toolchain -t pygo .     # immagine con la CLI
+docker build -f deploy/Dockerfile --target app-python --build-arg APP=app.pg --build-arg ALLOW=python -t app .   # con Python
 
 kubectl apply -f deploy/k8s/deployment.yaml     # Deployment + Service, probe su /healthz
 ```
@@ -259,6 +303,8 @@ v0.1.
 
 **Fatto e testato:**
 - **Linguaggio e checker:** linguaggio completo, checker statico, interprete, stdlib e concorrenza.
+- **Librerie Python** (`extern python`): chiamate tipizzate, handle, errori, capability `python`,
+  generatore di dichiarazioni; test su Python reale.
 - **Strumenti per agenti:** tutti i comandi della CLI elencati sopra.
 - **Distribuzione:** cross-compilazione per 6 piattaforme.
 - **Docker:** immagini costruite e provate (l'app risponde, lo shutdown è pulito, la sandbox blocca cicli infiniti e permessi mancanti).
@@ -267,8 +313,9 @@ v0.1.
 - **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
 **Roadmap:**
+- VM a bytecode di Pygo con formato `.pgc` (in corso);
 - firma digitale dei binari Windows (Authenticode);
-- backend compilato (generazione di Go/WASM);
+- backend WebAssembly;
 - trait e interfacce;
 - `select` su più canali;
 - effetti per le funzioni di ordine superiore;

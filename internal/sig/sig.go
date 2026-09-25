@@ -103,7 +103,7 @@ func load() {
 func Effects(fd *ast.FuncDecl) []string { return fd.Uses }
 
 // AllEffects is the closed set of capability names.
-var AllEffects = []string{"clock", "env", "fs", "net", "proc", "rand"}
+var AllEffects = []string{"clock", "env", "fs", "net", "proc", "python", "rand"}
 
 // IsEffect reports whether name is a known capability.
 func IsEffect(name string) bool {

@@ -438,6 +438,8 @@ func (th *Thread) selector(e *ast.Selector, x Value) (Value, error) {
 			return m, nil
 		}
 		return nil, th.panicAt(e.Pos, PName, "", "type %s has no method '%s'", v.Name, name)
+	case *PyHandle:
+		return th.pyMethod(v, name, e.Pos)
 	case *EnumType:
 		if vi, ok := v.ByName[name]; ok {
 			if len(vi.Fields) == 0 {
@@ -625,7 +627,10 @@ func (th *Thread) callBuiltin(b *Builtin, pos []Value, named []namedArg) (Value,
 	if err != nil {
 		return nil, err
 	}
-	mod := th.in.std[b.Mod]
+	mod := b.TypeMod
+	if mod == nil {
+		mod = th.in.std[b.Mod]
+	}
 	for i, p := range b.Decl.Params {
 		if p.Type != nil && !p.Variadic && !nilDefault(p, vals[i]) && !th.typeMatches(vals[i], p.Type, mod, nil) {
 			return nil, &Panic{Code: PType, Message: fmt.Sprintf("argument '%s' of %s must be %s, got %s", p.Name, b.Name, printer.Type(p.Type), TypeName(vals[i]))}

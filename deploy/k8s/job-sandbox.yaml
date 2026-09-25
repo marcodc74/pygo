@@ -1,5 +1,5 @@
 # Runs untrusted, AI-generated Pygo code in a locked-down Job:
-# no capabilities granted (no fs/net/env/proc), bounded steps and time,
+# no capabilities granted (no fs/net/env/proc/python), bounded steps and time,
 # non-root, read-only filesystem, no network via NetworkPolicy.
 #   kubectl create configmap agent-code --from-file=main.pg=./main.pg
 #   kubectl apply -f deploy/k8s/job-sandbox.yaml
