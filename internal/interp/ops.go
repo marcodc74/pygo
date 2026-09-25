@@ -40,9 +40,9 @@ func (th *Thread) evalBinary(env *Env, e *ast.Binary) (Value, error) {
 	}
 	switch e.Op {
 	case "and", "or":
-		xb, ok := x.(bool)
-		if !ok {
-			return nil, th.panicAt(e.Pos, PType, "operands of and/or must be Bool (no truthiness)", "left operand of '%s' is %s", e.Op, TypeName(x))
+		xb, err := th.logicOperand(e, x, "left")
+		if err != nil {
+			return nil, err
 		}
 		if (e.Op == "and" && !xb) || (e.Op == "or" && xb) {
 			return xb, nil
@@ -51,11 +51,7 @@ func (th *Thread) evalBinary(env *Env, e *ast.Binary) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		yb, ok := y.(bool)
-		if !ok {
-			return nil, th.panicAt(e.Pos, PType, "operands of and/or must be Bool (no truthiness)", "right operand of '%s' is %s", e.Op, TypeName(y))
-		}
-		return yb, nil
+		return th.logicOperand(e, y, "right")
 	case "??":
 		if x != nil {
 			return x, nil
@@ -447,4 +443,13 @@ func formatSpec(v Value, spec string) (string, string) {
 		return strings.Repeat(f, pad/2) + s + strings.Repeat(f, pad-pad/2), ""
 	}
 	return s + strings.Repeat(f, pad), ""
+}
+
+// logicOperand checks an operand of and/or (no truthiness).
+func (th *Thread) logicOperand(e *ast.Binary, v Value, side string) (bool, error) {
+	b, ok := v.(bool)
+	if !ok {
+		return false, th.panicAt(e.Pos, PType, "operands of and/or must be Bool (no truthiness)", "%s operand of '%s' is %s", side, e.Op, TypeName(v))
+	}
+	return b, nil
 }

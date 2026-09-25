@@ -225,7 +225,9 @@ type Function struct {
 	Pos        ast.Pos
 	HasSelf    bool
 	TypeParams map[string]bool
-	RecvType   any // *StructType or *EnumType for methods
+	RecvType   any    // *StructType or *EnumType for methods
+	Proto      *Proto // compiled body (VM engine), nil = interpreted
+	Upvals     []*Cell
 }
 
 type BoundMethod struct {
@@ -254,6 +256,7 @@ type Module struct {
 	Types   map[string]any // *StructType / *EnumType
 	Imports map[string]*Module
 	Std     bool
+	loaded  atomic.Bool // module initialization finished (members are final)
 }
 
 type RangeVal struct {

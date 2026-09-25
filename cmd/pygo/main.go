@@ -24,11 +24,11 @@ var version = "0.1.0-dev"
 const usage = `pygo - AI-first programming language toolchain
 
 usage:
-  pygo run      [--allow caps] [--max-steps N] [--timeout D] [--seed N] [--json] file.pg [-- args]
+  pygo run      [--allow caps] [--max-steps N] [--timeout D] [--seed N] [--engine tree|vm] [--json] file.pg [-- args]
   pygo run      [--allow caps] -e 'code'        run a snippet (imports first, the rest becomes main)
   pygo check    [--json] file.pg                static check (diagnostics with codes, hints, fixes)
   pygo fix      [--all] [--dry-run] [--json] file.pg   apply machine fixes
-  pygo test     [--json] [--filter s] file.pg|dir
+  pygo test     [--json] [--filter s] [--engine tree|vm] file.pg|dir
   pygo fmt      [-w] [--check] file.pg          canonical formatting
   pygo guide    [--stdlib]                      compact language reference for an AI context
   pygo explain  [--json] [CODE]                 explain a diagnostic/runtime code
@@ -162,6 +162,14 @@ func cmdCheck(args []string) int {
 	return 0
 }
 
+func validEngine(e string) bool {
+	if e == "tree" || e == "vm" {
+		return true
+	}
+	fmt.Fprintf(os.Stderr, "unknown engine %q (use tree or vm)\n", e)
+	return false
+}
+
 func cmdRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	allowS := fs.String("allow", "", "granted capabilities, comma separated (clock,env,fs,net,proc,rand|all)")
@@ -171,7 +179,11 @@ func cmdRun(args []string) int {
 	asJSON := fs.Bool("json", false, "print diagnostics and the run result as JSON (result on stderr)")
 	snippet := fs.String("e", "", "run this code instead of a file")
 	python := fs.String("python", "", "Python interpreter for extern python blocks (default: PYGO_PYTHON or python3)")
+	engine := fs.String("engine", "tree", "execution engine: tree (interpreter) or vm (bytecode virtual machine)")
 	fs.Parse(args)
+	if !validEngine(*engine) {
+		return 2
+	}
 	if fs.NArg() < 1 && *snippet == "" {
 		fmt.Fprintln(os.Stderr, "usage: pygo run [flags] file.pg [-- args]")
 		return 2
@@ -207,7 +219,7 @@ func cmdRun(args []string) int {
 	if code := preflight(prog, allow, *asJSON); code != 0 {
 		return code
 	}
-	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs, Python: *python})
+	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs, Python: *python, Engine: *engine})
 	res := in.Run()
 	if *asJSON {
 		fmt.Fprintln(os.Stderr, compactJSON(res))
@@ -245,7 +257,11 @@ func cmdTest(args []string) int {
 	filter := fs.String("filter", "", "run only tests whose name contains this text")
 	allowS := fs.String("allow", "all", "granted capabilities for tests")
 	python := fs.String("python", "", "Python interpreter for extern python blocks")
+	engine := fs.String("engine", "tree", "execution engine: tree or vm")
 	fs.Parse(args)
+	if !validEngine(*engine) {
+		return 2
+	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: pygo test [--json] [--filter s] file.pg|dir")
 		return 2
@@ -278,7 +294,7 @@ func cmdTest(args []string) int {
 			rep.Diagnostics = append(rep.Diagnostics, ds...)
 			continue
 		}
-		in := interp.New(prog, interp.Options{Allow: parseAllow(*allowS), Timeout: time.Minute, Python: *python})
+		in := interp.New(prog, interp.Options{Allow: parseAllow(*allowS), Timeout: time.Minute, Python: *python, Engine: *engine})
 		for _, tr := range in.RunTests([]string{prog.Main}, *filter) {
 			rep.Tests = append(rep.Tests, tr)
 			if tr.Passed {

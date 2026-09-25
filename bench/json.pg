@@ -1,0 +1,23 @@
+// Build records, encode them to JSON and decode them back.
+import "json"
+
+struct Order {
+    id: Int
+    customer: Str
+    items: List[Str]
+    total: Float
+}
+
+fn main() -> ! {
+    var orders: List[Order] = []
+    for i in 0..3000 {
+        orders.push(Order{id: i, customer: "c${i % 97}", items: ["a${i}", "b", "c"], total: float(i) * 1.5})
+    }
+    var checksum = 0
+    for o in orders {
+        let text = json.encode(o)
+        let back = try json.decode_as(text, schema: Order)
+        checksum += back.id + back.items.len()
+    }
+    print(checksum)
+}
