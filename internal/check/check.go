@@ -8,6 +8,7 @@ import (
 	"github.com/marcodc74/pygo/internal/ast"
 	"github.com/marcodc74/pygo/internal/diag"
 	"github.com/marcodc74/pygo/internal/loader"
+	"github.com/marcodc74/pygo/internal/printer"
 	"github.com/marcodc74/pygo/internal/sig"
 )
 
@@ -190,6 +191,11 @@ func (c *Checker) collect(file string) {
 				}
 			} else if sm := c.std[d.Path]; sm != nil && d.Path != "core" {
 				m.imports[name] = sm
+			}
+		case *ast.ExternDecl:
+			if !dup(d.Name(), d.Pos) {
+				m.imports[d.Name()] = c.externModule(d, file)
+				c.cur = m
 			}
 		case *ast.StructDecl:
 			if !dup(d.Name, d.Pos) {
@@ -518,6 +524,9 @@ func (c *Checker) checkModule(m *modInfo) {
 		}
 	}
 	for _, d := range f.Decls {
+		if ex, ok := d.(*ast.ExternDecl); ok && !m.usedImp[ex.Name()] && m.imports[ex.Name()] != nil {
+			c.warnf("W0202", ex.Pos, "remove the extern block", "extern module '%s' is declared but not used", ex.Name())
+		}
 		if imp, ok := d.(*ast.ImportDecl); ok {
 			name := imp.Alias
 			if name == "" {
@@ -796,4 +805,70 @@ func exprStart(e ast.Expr) ast.Pos {
 		return exprStart(e.Type)
 	}
 	return e.P()
+}
+
+// externModule builds the module of an `extern python "x" { ... }` block.
+// Every foreign function is fallible and implicitly uses the python effect.
+func (c *Checker) externModule(d *ast.ExternDecl, file string) *modInfo {
+	name := d.Name()
+	em := newMod(name, file, false)
+	em.extern = d
+	save := c.cur
+	c.cur = em
+	defer func() { c.cur = save }()
+	for _, t := range d.Types {
+		if _, dupT := em.structs[t.Name]; dupT {
+			c.errorf("E0207", t.Pos, "", "type '%s' is declared twice", t.Name)
+			continue
+		}
+		c.checkTypeName(t.Name, t.Pos)
+		em.structs[t.Name] = &structInfo{opaque: true, name: t.Name, methods: map[string]*funcInfo{}, mod: em}
+	}
+	finish := func(fd *ast.FuncDecl, fi *funcInfo, what string) {
+		if !fd.Fallible {
+			ret := ""
+			if fd.Ret != nil {
+				ret = printer.Type(fd.Ret)
+			}
+			c.errorf("E0610", fd.Pos, fmt.Sprintf("write -> !%s: a foreign call can always raise an exception", ret), "%s must be declared fallible", what)
+		}
+		has := false
+		for _, u := range fi.uses {
+			has = has || u == "python"
+		}
+		if !has {
+			fi.uses = append(append([]string{}, fi.uses...), "python")
+		}
+	}
+	for _, t := range d.Types {
+		si := em.structs[t.Name]
+		if si == nil {
+			continue
+		}
+		recv := &Type{K: KStruct, Struct: si}
+		for _, md := range t.Methods {
+			if !md.HasSelf {
+				c.errorf("E0612", md.Pos, "write fn "+md.Name+"(self, ...)", "methods of extern types take self as first parameter")
+			}
+			if _, dupM := si.methods[md.Name]; dupM {
+				c.errorf("E0207", md.Pos, "", "method '%s.%s' is declared twice", t.Name, md.Name)
+				continue
+			}
+			fi := c.funcSig(md, em, recv)
+			fi.name = name + "." + t.Name + "." + md.Name
+			finish(md, fi, "extern method "+t.Name+"."+md.Name)
+			si.methods[md.Name] = fi
+		}
+	}
+	for _, fd := range d.Funcs {
+		if _, dupF := em.funcs[fd.Name]; dupF {
+			c.errorf("E0207", fd.Pos, "", "function '%s' is declared twice", fd.Name)
+			continue
+		}
+		fi := c.funcSig(fd, em, nil)
+		fi.name = name + "." + fd.Name
+		finish(fd, fi, "extern function "+name+"."+fd.Name)
+		em.funcs[fd.Name] = fi
+	}
+	return em
 }

@@ -69,7 +69,7 @@ let a = match s {
 - Patterns: `_`, `name`, literals, `1 | 2`, `lo..=hi`, `lo..hi`, `Enum.Variant(p, _)`, guards `if cond`. match must be exhaustive (all variants, or `_`).
 
 ## Effects (capabilities)
-Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand`. Callers of effectful functions must declare them too. The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
+Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python`. Callers of effectful functions must declare them too. The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
 
 ## Concurrency
 `let t = spawn work(x)` → `Task[T]`; `try t.wait()`; `try wait_all(tasks)`. Channels: `let ch = chan(10)`, `ch.send(v)`, `ch.recv()` (T?, nil when closed), `ch.close()`, `for v in ch { }`. Lists/maps are thread-safe; prefer channels to shared state.
@@ -79,6 +79,26 @@ Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effect
 
 ## Modules
 `import "json"` (stdlib: json fs os http time log math re proc rand), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
+
+## Python libraries (extern)
+Declare exactly what you use; the checker validates calls like any Pygo function:
+```
+extern python "statistics" {
+    fn mean(data: List[Float]) -> !Float
+}
+extern python "pandas" as pd {
+    type DataFrame {                      // Python object kept in Python (handle)
+        fn head(self, n: Int = 5) -> !DataFrame
+        fn to_dict(self, orient: Str = "records") -> !List[Map[Str, Any]]
+    }
+    fn read_csv(path: Str) -> !DataFrame
+}
+fn main() -> ! uses python { print(try statistics.mean([1.0, 2.0])) }
+```
+- Every extern fn/method is fallible (`-> !T`) and uses the `python` effect (run with `--allow python`).
+- Parameter names must match the Python ones; the bridge passes positional-only parameters by position, others by keyword. `x: T? = nil` omitted → Python default.
+- Results are checked against the declared type (`E_PYTHON_TYPE`); exceptions → failure `E_PYTHON` (traceback in `e.data`); missing package → `E_PYTHON_IMPORT`.
+- Generate declarations instead of guessing: `pygo extern python MODULE [NAME ...]`.
 
 ## Exit codes
 0 ok · 1 unhandled failure in main · 2 panic · 3 compile errors · 4 capability denied.

@@ -34,6 +34,7 @@ type Result struct {
 // Run loads the main module and calls main().
 func (in *Interp) Run() *Result {
 	defer in.Flush()
+	defer in.ClosePython()
 	res := in.guard(func() error {
 		m, err := in.Load(in.prog.Main)
 		if err != nil {
@@ -104,6 +105,7 @@ type TestResult struct {
 // RunTests runs the test blocks of the given files (all loaded files if nil).
 func (in *Interp) RunTests(files []string, filter string) []TestResult {
 	defer in.Flush()
+	defer in.ClosePython()
 	if files == nil {
 		files = []string{in.prog.Main}
 	}

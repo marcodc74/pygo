@@ -18,6 +18,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
+      - uses: actions/setup-python@v5   # extern python tests use a real Python
+        with:
+          python-version: "3.12"
       - name: vet
         run: go vet ./...
       - name: gofmt
@@ -56,6 +59,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: build app image
         run: docker build -f deploy/Dockerfile -t pygo-app .
+      - name: build app image with Python
+        run: |
+          docker build -f deploy/Dockerfile --target app-python \
+            --build-arg APP=examples/python_stats.pg --build-arg ALLOW=python -t pygo-app-python .
+          docker run --rm pygo-app-python | grep "top words"
       - name: build toolchain image
         run: docker build -f deploy/Dockerfile --target toolchain -t pygo .
       - name: smoke test

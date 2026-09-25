@@ -352,3 +352,55 @@ fn main() {
 		t.Fatalf("fixed program still has errors: %v", ds)
 	}
 }
+
+func TestExternPython(t *testing.T) {
+	expectCodes(t, `
+extern python "statistics" {
+    fn mean(data: List[Float]) -> !Float
+}
+extern python "pandas" as pd {
+    type DataFrame {
+        fn head(self, n: Int = 5) -> !DataFrame
+    }
+    fn read_csv(path: Str) -> !DataFrame
+}
+
+fn avg(xs: List[Float]) -> !Float uses python => try statistics.mean(xs)
+
+fn main() -> ! uses python {
+    let df = try pd.read_csv("x.csv")
+    let top: pd.DataFrame = try df.head(n: 3)
+    print(top, try avg([1.0]))
+}
+`)
+	expectCodes(t, `
+extern python "math" {
+    fn sqrt(x: Float) -> Float
+    type Thing {
+        fn f(x: Int) -> !Int
+    }
+}
+fn main() {
+    let t = math.Thing{}
+    print(math.sqrt(2.0), t)
+}
+`, "E0610", "E0612", "E0611", "E0501")
+	ds := expectCodes(t, `
+extern python "pandas" as pd {
+    type DataFrame {
+        fn describe(self) -> !DataFrame
+    }
+    fn read_csv(path: Str) -> !DataFrame
+}
+fn load() -> !pd.DataFrame {
+    let df = try pd.read_csv("x.csv")
+    return try df.descrbe()
+}
+extern python "unused_mod" {
+    fn f() -> !Int
+}
+`, "E0501", "E0204", "W0202")
+	if !strings.Contains(ds[0].Hint, "uses python") || !strings.Contains(ds[1].Hint, "'describe'") {
+		t.Fatalf("hints: %q / %q", ds[0].Hint, ds[1].Hint)
+	}
+}

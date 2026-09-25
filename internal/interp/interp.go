@@ -29,6 +29,7 @@ type Options struct {
 	Stdout   io.Writer
 	Stderr   io.Writer
 	Stdin    io.Reader
+	Python   string // Python interpreter for extern python blocks ("" = PYGO_PYTHON or python3)
 }
 
 type Interp struct {
@@ -47,6 +48,8 @@ type Interp struct {
 	std      map[string]*Module
 	universe *Env
 	errType  *StructType
+	py       *pyBridge
+	pyOnce   sync.Once
 }
 
 type syncWriter struct {
@@ -336,6 +339,12 @@ func (in *Interp) Load(file string) (*Module, error) {
 		}
 	}
 	for _, d := range f.Decls {
+		if ex, ok := d.(*ast.ExternDecl); ok {
+			em := in.externModule(ex, file)
+			m.Imports[ex.Name()] = em
+			m.Env.Define(ex.Name(), em, false)
+			continue
+		}
 		imp, ok := d.(*ast.ImportDecl)
 		if !ok {
 			continue

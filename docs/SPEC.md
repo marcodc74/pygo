@@ -266,7 +266,8 @@ There are two kinds of error.
 
 ## 8. Effects (capabilities)
 
-The effects are `fs`, `net`, `env`, `proc`, `clock` and `rand`.
+The effects are `fs`, `net`, `env`, `proc`, `clock`, `rand` and `python`
+(calls into Python libraries, §14.1).
 
 - **Declaration**: a function that performs an effect directly, or calls a
   function that does, must declare it: `uses net, fs` (E0501). Declared but
@@ -339,7 +340,8 @@ must be covered by unguarded arms, or there must be a final catch-all
 | `explain CODE` | description with wrong/right examples |
 | `guide` | compact reference + stdlib signatures (~2.6k tokens) |
 | `describe`, `outline`, `ast` | API, symbols with content hashes, AST — all JSON |
-| `edit --replace KEY` | replaces a whole declaration (`fn:x`, `struct:X`, `impl:X`, `test:name`, `let:X`, `import:path`); `--expect-hash` guards against stale edits |
+| `edit --replace KEY` | replaces a whole declaration (`fn:x`, `struct:X`, `impl:X`, `test:name`, `let:X`, `import:path`, `extern:name`); `--expect-hash` guards against stale edits |
+| `extern python MODULE [NAME...]` | draft `extern` block generated from the real Python signatures and type hints |
 | `fmt` | the canonical text form |
 | `build` | self-contained executable (runtime + bundle); `--runtime` selects a binary for another OS/arch |
 
@@ -384,6 +386,57 @@ the checker, the runtime, `describe` and `guide`.
 | `proc` | `run(cmd: List[Str])` without a shell (`uses proc`) |
 | `rand` | seeded, deterministic (`uses rand`) |
 
+### 14.1 Python libraries (`extern python`)
+
+```
+extern python "module.path" [as name] {
+    fn f(p: T, q: U = default) -> !R
+    type Handle {
+        fn method(self, ...) -> !R
+    }
+}
+```
+
+- **Binding.** The block binds `name`, which defaults to the last segment of
+  the module path. Functions are called as `name.f(...)`, and extern types
+  are referenced as `name.Handle`.
+- **Fallibility and effect.** Every function and method must be fallible
+  (E0610) and implicitly uses the `python` effect. Callers must declare
+  `uses python`, and the runner must grant `--allow python`.
+- **Security.** Granting `python` effectively grants everything: Python code
+  can reach files, the network and processes. It is also outside
+  `--max-steps` and determinism, although `--timeout` still stops it by
+  terminating the worker.
+- **Extern types** are opaque handles to Python objects that stay in
+  Python. They cannot be built with literals (E0611), and their methods
+  take `self` (E0612). Released handles are freed in Python.
+- **Execution.** Python runs in a separate worker process
+  (`python -u -c <bridge>`), started on first use. The interpreter is taken
+  from `--python PATH`, then `PYGO_PYTHON`, then `python3`/`python`. Calls
+  are serialized, and output printed by Python goes to stderr.
+- **Arguments.** They are sent with their names. The bridge binds them to
+  the real Python signature: positional-only parameters by position, all
+  others by keyword. A name unknown to Python is an error that says so. A
+  parameter declared `p: T? = nil` and left nil is omitted, so the Python
+  default applies. Without a signature (some C functions), the leading run
+  of consecutive arguments is positional and the rest are keywords.
+- **Values.**
+  - Pygo to Python: Int, Float (always a float), Str, Bool, nil, List and
+    Map become the matching Python values; structs become dicts; handles
+    pass through.
+  - Python to Pygo: results convert to JSON-like data (tuples and sets
+    become lists; numpy arrays and scalars become lists and numbers). An
+    object that cannot be converted, or one whose declared result is an
+    extern type, stays in Python and returns as a handle.
+  - The result is validated against the declared type: a mismatch is the
+    failure `E_PYTHON_TYPE`, with a path such as `result[2].name`.
+- **Errors** are failures:
+  - `E_PYTHON`: `message` is `"Type: text"`, and `data` holds `type` and
+    `traceback`;
+  - `E_PYTHON_IMPORT`: the message suggests `pip install`;
+  - `E_PYTHON_TYPE`;
+  - `E_PYTHON_UNAVAILABLE`: Python was not found, or the worker exited.
+
 ## 15. Deployment
 
 - `make dist` builds static binaries for Linux, macOS and Windows on amd64
@@ -395,6 +448,9 @@ the checker, the runtime, `describe` and `guide`.
 - `deploy/k8s/deployment.yaml` defines a Deployment and a Service, with
   probes on `/healthz`, a read-only root filesystem and all Linux
   capabilities dropped.
+- `deploy/Dockerfile` target `app-python` adds a Python runtime (and the
+  packages of a `requirements.txt` next to the program) for programs with
+  `extern python` blocks.
 - `deploy/k8s/job-sandbox.yaml` runs untrusted, AI-generated code with no
   Pygo capabilities, a step budget, a timeout and a deny-all
   NetworkPolicy.

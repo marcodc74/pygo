@@ -156,6 +156,39 @@ func (p *pr) decl(d ast.Decl) {
 	case *ast.TestDecl:
 		p.w("test ", strconv.Quote(d.Name), " ")
 		p.block(d.Body)
+	case *ast.ExternDecl:
+		p.doc(d.Doc)
+		p.w("extern ", d.Lang, " ", strconv.Quote(d.Module))
+		if d.Alias != "" {
+			p.w(" as ", d.Alias)
+		}
+		p.w(" {")
+		p.indent++
+		for _, t := range d.Types {
+			p.nl()
+			p.doc(t.Doc)
+			p.w("type ", t.Name)
+			if len(t.Methods) > 0 {
+				p.w(" {")
+				p.indent++
+				for _, m := range t.Methods {
+					p.nl()
+					p.doc(m.Doc)
+					p.sig(m)
+				}
+				p.indent--
+				p.nl()
+				p.w("}")
+			}
+		}
+		for _, f := range d.Funcs {
+			p.nl()
+			p.doc(f.Doc)
+			p.sig(f)
+		}
+		p.indent--
+		p.nl()
+		p.w("}")
 	}
 }
 

@@ -382,6 +382,43 @@ type ConstDecl struct {
 	Start, End int
 }
 
+// ExternType is an opaque type of a foreign library (a handle to an object
+// that stays in the foreign runtime), with its methods.
+type ExternType struct {
+	Pos     Pos
+	Name    string
+	Doc     string
+	Methods []*FuncDecl
+}
+
+// ExternDecl declares typed bindings to a foreign library:
+//
+//	extern python "statistics" as st { fn mean(data: List[Float]) -> !Float }
+type ExternDecl struct {
+	Pos        Pos
+	Doc        string
+	Lang       string // "python"
+	Module     string // foreign module path, e.g. "os.path"
+	Alias      string // binding name ("" = last path segment)
+	Funcs      []*FuncDecl
+	Types      []*ExternType
+	Start, End int
+}
+
+// Name returns the binding name of the extern module.
+func (d *ExternDecl) Name() string {
+	if d.Alias != "" {
+		return d.Alias
+	}
+	name := d.Module
+	for i := len(name) - 1; i >= 0; i-- {
+		if name[i] == '.' || name[i] == '/' {
+			return name[i+1:]
+		}
+	}
+	return name
+}
+
 type File struct {
 	Name  string
 	Decls []Decl
@@ -479,6 +516,7 @@ func (n *ImplDecl) P() Pos   { return n.Pos }
 func (n *ImportDecl) P() Pos { return n.Pos }
 func (n *TestDecl) P() Pos   { return n.Pos }
 func (n *ConstDecl) P() Pos  { return n.Pos }
+func (n *ExternDecl) P() Pos { return n.Pos }
 
 func (*FuncDecl) decl()   {}
 func (*StructDecl) decl() {}
@@ -487,6 +525,7 @@ func (*ImplDecl) decl()   {}
 func (*ImportDecl) decl() {}
 func (*TestDecl) decl()   {}
 func (*ConstDecl) decl()  {}
+func (*ExternDecl) decl() {}
 
 func (n *FuncDecl) Span() (int, int)   { return n.Start, n.End }
 func (n *StructDecl) Span() (int, int) { return n.Start, n.End }
@@ -495,6 +534,7 @@ func (n *ImplDecl) Span() (int, int)   { return n.Start, n.End }
 func (n *ImportDecl) Span() (int, int) { return n.Start, n.End }
 func (n *TestDecl) Span() (int, int)   { return n.Start, n.End }
 func (n *ConstDecl) Span() (int, int)  { return n.Start, n.End }
+func (n *ExternDecl) Span() (int, int) { return n.Start, n.End }
 
 // DeclKey returns the symbol path used by outline/edit ("fn:name",
 // "struct:Name", "impl:Name", "test:name", ...).
@@ -514,6 +554,8 @@ func DeclKey(d Decl) string {
 		return "test:" + d.Name
 	case *ConstDecl:
 		return "let:" + d.Let.Name
+	case *ExternDecl:
+		return "extern:" + d.Name()
 	}
 	return "?"
 }

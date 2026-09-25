@@ -37,9 +37,11 @@ usage:
   pygo edit     file.pg --replace KEY | --insert-after KEY | --append | --delete KEY [--expect-hash H]
   pygo ast      file.pg                         syntax tree as JSON
   pygo build    [--allow caps] [--runtime bin] -o app file.pg   self-contained executable
+  pygo extern   python MODULE [NAME ...]        draft extern block from Python signatures
   pygo version
 
-capabilities (--allow): ` + "clock,env,fs,net,proc,rand or all" + `
+capabilities (--allow): ` + "clock,env,fs,net,proc,python,rand or all" + `
+Python for extern blocks: --python PATH, or PYGO_PYTHON (default python3)
 exit codes: 0 ok, 1 failure, 2 panic, 3 compile error, 4 capability denied
 `
 
@@ -77,6 +79,8 @@ func main() {
 		os.Exit(cmdAST(args))
 	case "build":
 		os.Exit(cmdBuild(args))
+	case "extern":
+		os.Exit(cmdExtern(args))
 	case "version", "--version":
 		fmt.Println("pygo", version)
 	case "help", "-h", "--help":
@@ -166,6 +170,7 @@ func cmdRun(args []string) int {
 	seed := fs.Int64("seed", 0, "seed of the rand module")
 	asJSON := fs.Bool("json", false, "print diagnostics and the run result as JSON (result on stderr)")
 	snippet := fs.String("e", "", "run this code instead of a file")
+	python := fs.String("python", "", "Python interpreter for extern python blocks (default: PYGO_PYTHON or python3)")
 	fs.Parse(args)
 	if fs.NArg() < 1 && *snippet == "" {
 		fmt.Fprintln(os.Stderr, "usage: pygo run [flags] file.pg [-- args]")
@@ -202,7 +207,7 @@ func cmdRun(args []string) int {
 	if code := preflight(prog, allow, *asJSON); code != 0 {
 		return code
 	}
-	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs})
+	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs, Python: *python})
 	res := in.Run()
 	if *asJSON {
 		fmt.Fprintln(os.Stderr, compactJSON(res))
@@ -239,6 +244,7 @@ func cmdTest(args []string) int {
 	asJSON := fs.Bool("json", false, "print results as JSON")
 	filter := fs.String("filter", "", "run only tests whose name contains this text")
 	allowS := fs.String("allow", "all", "granted capabilities for tests")
+	python := fs.String("python", "", "Python interpreter for extern python blocks")
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: pygo test [--json] [--filter s] file.pg|dir")
@@ -272,7 +278,7 @@ func cmdTest(args []string) int {
 			rep.Diagnostics = append(rep.Diagnostics, ds...)
 			continue
 		}
-		in := interp.New(prog, interp.Options{Allow: parseAllow(*allowS), Timeout: time.Minute})
+		in := interp.New(prog, interp.Options{Allow: parseAllow(*allowS), Timeout: time.Minute, Python: *python})
 		for _, tr := range in.RunTests([]string{prog.Main}, *filter) {
 			rep.Tests = append(rep.Tests, tr)
 			if tr.Passed {

@@ -156,7 +156,7 @@ func (p *Parser) endStmt() {
 
 // ---------- declarations ----------
 
-var declKeywords = map[string]bool{"fn": true, "struct": true, "enum": true, "impl": true, "import": true, "test": true, "let": true, "var": true}
+var declKeywords = map[string]bool{"fn": true, "struct": true, "enum": true, "impl": true, "import": true, "test": true, "let": true, "var": true, "extern": true}
 
 func (p *Parser) declOrRecover() (d ast.Decl) {
 	start := p.i
@@ -212,6 +212,8 @@ func (p *Parser) decl() ast.Decl {
 		return d
 	case p.is("fn"):
 		return p.funcDecl("")
+	case p.is("extern"):
+		return p.externDecl()
 	case p.is("struct"):
 		return p.structDecl()
 	case p.is("enum"):
@@ -251,11 +253,17 @@ func (p *Parser) decl() ast.Decl {
 	case p.is("var"):
 		p.errorf("E0209", t.Pos, "use 'let' for a module-level constant, or pass state explicitly", "module-level 'var' is not allowed (no global mutable state)")
 	}
-	p.errorf("E0110", t.Pos, "top-level declarations are: import, fn, struct, enum, impl, test, let", "expected declaration, found %s", t)
+	p.errorf("E0110", t.Pos, "top-level declarations are: import, extern, fn, struct, enum, impl, test, let", "expected declaration, found %s", t)
 	return nil
 }
 
 func (p *Parser) funcDecl(recv string) *ast.FuncDecl {
+	return p.funcDeclMode(recv, false)
+}
+
+// funcDeclMode parses a function; sigOnly=true parses a body-less signature
+// (declarations inside extern blocks).
+func (p *Parser) funcDeclMode(recv string, sigOnly bool) *ast.FuncDecl {
 	t := p.expect("fn")
 	start := t.Off
 	if t.DocOff >= 0 {
@@ -310,6 +318,13 @@ func (p *Parser) funcDecl(recv string) *ast.FuncDecl {
 		}
 		p.i = save
 		break
+	}
+	if sigOnly {
+		if p.is("{") || p.is("=>") {
+			p.errorf("E0110", p.tok().Pos, "extern functions are implemented by the foreign library: remove the body", "extern function '%s' cannot have a body", d.Name)
+		}
+		d.End = p.prevEnd()
+		return d
 	}
 	if p.accept("=>") {
 		d.ExprBody = p.expr()
@@ -1058,4 +1073,62 @@ func (p *Parser) litPatternValue() ast.Expr {
 	}
 	p.errorf("E0119", t.Pos, "patterns are: _, name, literal, lo..=hi, Enum.Variant(p, ...)", "invalid pattern %s", t)
 	return nil
+}
+
+// externDecl parses: extern python "module" [as name] { fn ... ; type T { fn ... } }
+func (p *Parser) externDecl() *ast.ExternDecl {
+	t := p.expect("extern")
+	start := t.Off
+	if t.DocOff >= 0 {
+		start = t.DocOff
+	}
+	d := &ast.ExternDecl{Pos: t.Pos, Doc: t.Doc, Start: start}
+	lang := p.ident()
+	if lang.Text != "python" {
+		p.errorf("E0120", lang.Pos, `write extern python "module" { ... }`, "unsupported foreign language '%s' (supported: python)", lang.Text)
+	}
+	d.Lang = lang.Text
+	if p.tok().Kind != lexer.STRING || len(p.tok().Parts) != 1 || p.tok().Parts[0].IsExpr {
+		p.errorf("E0110", p.tok().Pos, `write extern python "statistics" { ... }`, "expected the foreign module name as a string")
+	}
+	d.Module = p.next().Parts[0].Text
+	if p.accept("as") {
+		d.Alias = p.ident().Text
+	}
+	p.expect("{")
+	for {
+		p.skipNewlines()
+		if p.is("}") {
+			break
+		}
+		switch {
+		case p.is("fn"):
+			d.Funcs = append(d.Funcs, p.funcDeclMode("", true))
+		case p.tok().Kind == lexer.IDENT && p.tok().Text == "type":
+			tt := p.next()
+			nt := p.ident()
+			et := &ast.ExternType{Pos: nt.Pos, Name: nt.Text, Doc: tt.Doc}
+			if p.accept("{") {
+				for {
+					p.skipNewlines()
+					if p.is("}") {
+						break
+					}
+					if !p.is("fn") {
+						p.errorf("E0110", p.tok().Pos, "type blocks inside extern contain only fn signatures", "expected 'fn', found %s", p.tok())
+					}
+					et.Methods = append(et.Methods, p.funcDeclMode(nt.Text, true))
+					p.endStmt()
+				}
+				p.expect("}")
+			}
+			d.Types = append(d.Types, et)
+		default:
+			p.errorf("E0110", p.tok().Pos, "extern blocks contain fn signatures and type declarations", "expected 'fn' or 'type', found %s", p.tok())
+		}
+		p.endStmt()
+	}
+	p.expect("}")
+	d.End = p.prevEnd()
+	return d
 }

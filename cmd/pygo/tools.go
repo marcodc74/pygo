@@ -274,6 +274,7 @@ func describeDecls(decls []ast.Decl) map[string]any {
 	funcs := []funcDesc{}
 	types := []typeDesc{}
 	var imports, tests, consts []string
+	externs := []map[string]any{}
 	byName := map[string]int{}
 	for _, d := range decls {
 		switch d := d.(type) {
@@ -295,6 +296,27 @@ func describeDecls(decls []ast.Decl) map[string]any {
 			tests = append(tests, d.Name)
 		case *ast.ConstDecl:
 			consts = append(consts, d.Let.Name)
+		case *ast.ExternDecl:
+			ex := map[string]any{"lang": d.Lang, "module": d.Module, "name": d.Name(), "functions": []funcDesc{}, "types": []typeDesc{}}
+			var fs []funcDesc
+			for _, f := range d.Funcs {
+				fs = append(fs, describeFunc(f))
+			}
+			var ts []typeDesc
+			for _, t := range d.Types {
+				td := typeDesc{Kind: "extern", Name: t.Name, Doc: t.Doc, Line: t.Pos.Line}
+				for _, m := range t.Methods {
+					td.Methods = append(td.Methods, describeFunc(m))
+				}
+				ts = append(ts, td)
+			}
+			if fs != nil {
+				ex["functions"] = fs
+			}
+			if ts != nil {
+				ex["types"] = ts
+			}
+			externs = append(externs, ex)
 		}
 	}
 	for _, d := range decls {
@@ -306,7 +328,7 @@ func describeDecls(decls []ast.Decl) map[string]any {
 			}
 		}
 	}
-	return map[string]any{"imports": imports, "functions": funcs, "types": types, "constants": consts, "tests": tests}
+	return map[string]any{"imports": imports, "externs": externs, "functions": funcs, "types": types, "constants": consts, "tests": tests}
 }
 
 func cmdDescribe(args []string) int {
@@ -413,6 +435,8 @@ func outline(src string, f *ast.File) []symbol {
 			sum = "test " + d.Name
 		case *ast.ConstDecl:
 			sum = "let " + d.Let.Name
+		case *ast.ExternDecl:
+			sum = fmt.Sprintf("extern %s %q as %s (%d functions, %d types)", d.Lang, d.Module, d.Name(), len(d.Funcs), len(d.Types))
 		}
 		out = append(out, symbol{Key: key, Kind: strings.SplitN(key, ":", 2)[0], Line: lineOf(runes, s), EndLine: lineOf(runes, e), Hash: hex.EncodeToString(h[:6]), Summary: sum})
 	}

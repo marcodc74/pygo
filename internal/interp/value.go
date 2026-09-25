@@ -238,11 +238,12 @@ type BoundMethod struct {
 type BuiltinFn func(th *Thread, recv Value, args []Value) (Value, error)
 
 type Builtin struct {
-	Name string
-	Decl *ast.FuncDecl
-	Fn   BuiltinFn
-	Recv Value // for methods of builtin types
-	Mod  string
+	Name    string
+	Decl    *ast.FuncDecl
+	Fn      BuiltinFn
+	Recv    Value // for methods of builtin types
+	Mod     string
+	TypeMod *Module // module used to resolve parameter types (extern blocks)
 }
 
 type Module struct {
@@ -321,6 +322,11 @@ func TypeName(v Value) string {
 		return "Chan"
 	case *Task:
 		return "Task"
+	case *PyHandle:
+		if v.T != nil {
+			return v.T.Name
+		}
+		return "python:" + v.PyType
 	}
 	return "?"
 }
@@ -399,6 +405,9 @@ func Equal(a, b Value) bool {
 	case *RangeVal:
 		br, ok := b.(*RangeVal)
 		return ok && *a == *br
+	case *PyHandle:
+		bh, ok := b.(*PyHandle)
+		return ok && bh.ID == a.ID
 	}
 	return a == b
 }
@@ -570,6 +579,8 @@ func writeRepr(b *strings.Builder, v Value, depth int) {
 		b.WriteString("<chan>")
 	case *Task:
 		b.WriteString("<task>")
+	case *PyHandle:
+		b.WriteString("<python " + v.PyType + ">")
 	default:
 		b.WriteString("<?>")
 	}
