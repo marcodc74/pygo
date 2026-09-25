@@ -111,7 +111,7 @@ Su macOS il binario scaricato dal browser può essere bloccato da Gatekeeper; si
 Il modo più semplice è lo script di installazione. Apri **PowerShell** e incolla:
 
 ```powershell
-irm https://raw.githubusercontent.com/marcodc74/pygo/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/marcodc74/pygo/master/install.ps1 | iex
 ```
 
 Lo script ([`install.ps1`](install.ps1)):
