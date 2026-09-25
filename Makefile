@@ -4,7 +4,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION)
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 IMAGE ?= pygo
 
-.PHONY: build test race vet dist guide docker clean
+.PHONY: build test race vet dist guide docker clean integrations
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o pygo ./cmd/pygo
@@ -12,6 +12,10 @@ build:
 test: vet
 	go test ./...
 	go run ./cmd/pygo test examples/
+
+integrations:
+	go build -o /tmp/pygo-itest ./cmd/pygo
+	PYGO_BIN=/tmp/pygo-itest python3 integrations/pygo_tools.py
 
 race:
 	go test -race ./...

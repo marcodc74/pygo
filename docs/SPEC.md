@@ -336,6 +336,7 @@ must be covered by unguarded arms, or there must be a final catch-all
 | `check --json` | `{ok, diagnostics[{code, severity, message, file, line, col, hint, fix?}]}` |
 | `fix [--all]` | applies `fix` edits (`safe` ones by default) and re-checks |
 | `run [--json]` | program output on stdout; with `--json` a final line on stderr `{exit_code, status, panic?, error?, steps}` |
+| `run/test --engine tree\|vm` | selects the execution engine (§16); results are identical |
 | `test --json` | `{ok, passed, failed, tests[{name, file, line, passed, ms, failure?}]}` |
 | `explain CODE` | description with wrong/right examples |
 | `guide` | compact reference + stdlib signatures (~2.6k tokens) |
@@ -365,6 +366,10 @@ Diagnostic code ranges:
 | Rxxxx | runtime panics |
 
 `pygo explain` lists them all.
+
+How to connect the toolchain to LLM chats, coding CLIs (Claude Code, Codex,
+Gemini CLI, opencode, Copilot, Cursor, Qwen Code, Aider) and APIs (Claude,
+OpenAI, Gemini, local models): `docs/LLM.md` and `integrations/`.
 
 ## 14. Standard library
 

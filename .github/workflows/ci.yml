@@ -37,6 +37,12 @@ jobs:
           go build -o pygo-bin ./cmd/pygo
           for f in examples/*.pg; do ./pygo-bin check "$f"; done
           ./pygo-bin test examples/
+      - name: LLM integration tools (self-test)
+        shell: bash
+        run: |
+          ext=""; [ "$RUNNER_OS" = "Windows" ] && ext=".exe"
+          go build -o "itest/pygo$ext" ./cmd/pygo
+          PYGO_BIN="itest/pygo$ext" python integrations/pygo_tools.py
 
   dist:
     needs: test

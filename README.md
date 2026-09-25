@@ -273,8 +273,22 @@ kubectl apply -f deploy/k8s/deployment.yaml     # Deployment + Service, probe su
 
   Un ciclo infinito termina con un report JSON (`R0011`) e l'accesso a file o rete senza permesso termina con exit 4.
 
+## Usarlo con gli LLM
+
+La guida [`docs/LLM.md`](docs/LLM.md) spiega come far scrivere Pygo ai modelli principali.
+
+- **Chat** (ChatGPT, Claude.ai, Gemini): incolli `pygo guide` nelle istruzioni.
+- **CLI di coding:** Claude Code, OpenAI Codex CLI, Gemini CLI, opencode, GitHub Copilot, Cursor, Qwen Code e Aider. Ci sono un `AGENTS.md` pronto e una skill per Claude Code.
+- **API:** Claude, OpenAI, Gemini e modelli locali (Ollama, vLLM, llama.cpp). C'è un agente pronto:
+
+```sh
+cp integrations/AGENTS.md ./AGENTS.md          # istruzioni per qualunque CLI di coding
+python integrations/agent.py --provider claude "scrivi un programma Pygo che ..."
+```
+
 ## Documentazione
 
+- [`docs/LLM.md`](docs/LLM.md): come usare Pygo con i vari LLM, dalle chat alle CLI alle API.
 - [`docs/SPEC.md`](docs/SPEC.md): specifica completa del linguaggio.
 - [`docs/GUIDE.md`](docs/GUIDE.md): guida compatta da mettere nel contesto di un modello (`pygo guide`).
 - `pygo explain` spiega tutti i codici diagnostici (E/W) e runtime (R).
@@ -294,6 +308,7 @@ internal/interp     runtime: valori thread-safe, stdlib, goroutine per spawn/cha
                     due motori, l'interprete ad albero e la VM a bytecode
                     (vm_compile.go compila, vm.go esegue)
 bench/              programmi di benchmark per confrontare i motori
+integrations/       AGENTS.md, skill per Claude Code, tool per le API degli LLM (pygo_tools.py, agent.py)
 internal/printer    stampa canonica dell'AST (pygo fmt)
 internal/loader     moduli locali (import "./x"), cicli, bundle
 internal/guide      guida compatta per il contesto dei modelli
@@ -316,6 +331,9 @@ v0.1.
 - **VM a bytecode** (`--engine vm`): compilatore e macchina virtuale propri di Pygo,
   da 1,2 a 3,5 volte più veloce dell'interprete (vedi SPEC §16). Ogni programma di test
   gira su entrambi i motori, che devono dare output, errori, trace e numero di passi identici.
+- **Integrazione con gli LLM** ([`docs/LLM.md`](docs/LLM.md)):
+  - `AGENTS.md` e una skill per Claude Code;
+  - tool e agente per le API di Claude, OpenAI, Gemini e modelli locali. Li ho provati con gli SDK reali e risposte simulate, non contro le API vere.
 - **Test:** unit test, test golden sugli esempi e race detector passano.
 - **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
@@ -336,5 +354,6 @@ v0.1.
 ```sh
 make test     # vet + gofmt + unit test + test degli esempi
 make race     # race detector
+make integrations  # autotest dei tool per gli LLM (serve python3)
 make dist     # cross-compilazione
 ```
