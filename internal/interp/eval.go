@@ -78,12 +78,7 @@ func (th *Thread) eval(env *Env, e ast.Expr) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		l, ok1 := lo.(int64)
-		h, ok2 := hi.(int64)
-		if !ok1 || !ok2 {
-			return nil, th.panicAt(e.Pos, PType, "", "range bounds must be Int, got %s..%s", TypeName(lo), TypeName(hi))
-		}
-		return &RangeVal{Lo: l, Hi: h, Inclusive: e.Inclusive}, nil
+		return th.makeRange(e, lo, hi)
 	case *ast.Selector:
 		x, err := th.eval(env, e.X)
 		if err != nil {
@@ -139,17 +134,34 @@ func (th *Thread) evalStr(env *Env, e *ast.StrLit) (Value, error) {
 		if err != nil {
 			return nil, err
 		}
-		if p.Format != "" {
-			s, ferr := formatSpec(v, p.Format)
-			if ferr != "" {
-				return nil, th.panicAt(p.Expr.P(), PType, "format spec: [[fill]<|>|^][0][width][.prec][f|e|x|X|b|o|%]", "%s", ferr)
-			}
-			b.WriteString(s)
-		} else {
-			b.WriteString(Str(v))
+		s, err := th.formatPart(p, v)
+		if err != nil {
+			return nil, err
 		}
+		b.WriteString(s)
 	}
 	return b.String(), nil
+}
+
+// formatPart renders one interpolated value, applying its format spec.
+func (th *Thread) formatPart(p ast.StrPart, v Value) (string, error) {
+	if p.Format == "" {
+		return Str(v), nil
+	}
+	s, ferr := formatSpec(v, p.Format)
+	if ferr != "" {
+		return "", th.panicAt(p.Expr.P(), PType, "format spec: [[fill]<|>|^][0][width][.prec][f|e|x|X|b|o|%]", "%s", ferr)
+	}
+	return s, nil
+}
+
+func (th *Thread) makeRange(e *ast.Range, lo, hi Value) (Value, error) {
+	l, ok1 := lo.(int64)
+	h, ok2 := hi.(int64)
+	if !ok1 || !ok2 {
+		return nil, th.panicAt(e.Pos, PType, "", "range bounds must be Int, got %s..%s", TypeName(lo), TypeName(hi))
+	}
+	return &RangeVal{Lo: l, Hi: h, Inclusive: e.Inclusive}, nil
 }
 
 func (th *Thread) evalStructLit(env *Env, e *ast.StructLit) (Value, error) {
@@ -157,26 +169,54 @@ func (th *Thread) evalStructLit(env *Env, e *ast.StructLit) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	st, ok := tv.(*StructType)
-	if !ok {
-		return nil, th.panicAt(e.Pos, PType, "", "%s is not a struct type", printer.Expr(e.Type))
+	st, err := th.structTypeOf(e, tv)
+	if err != nil {
+		return nil, err
 	}
 	vals := make([]Value, len(st.Fields))
 	set := make([]bool, len(st.Fields))
 	for _, f := range e.Fields {
-		i, ok := st.FieldIdx[f.Name]
-		if !ok {
-			return nil, th.panicAt(f.Pos, PName, suggestHint(f.Name, fieldNames(st)), "%s has no field '%s'", st.Name, f.Name)
+		i, err := th.structFieldIdx(st, f)
+		if err != nil {
+			return nil, err
 		}
 		v, err := th.eval(env, f.Value)
 		if err != nil {
 			return nil, err
 		}
-		if !th.typeMatches(v, st.Fields[i].Type, st.Module, nil) {
-			return nil, th.panicAt(f.Pos, PType, "", "field %s.%s has type %s, got %s", st.Name, f.Name, printer.Type(st.Fields[i].Type), TypeName(v))
+		if err := th.structFieldCheck(st, i, f, v); err != nil {
+			return nil, err
 		}
 		vals[i], set[i] = v, true
 	}
+	return th.finishStruct(e, st, vals, set)
+}
+
+func (th *Thread) structTypeOf(e *ast.StructLit, tv Value) (*StructType, error) {
+	st, ok := tv.(*StructType)
+	if !ok {
+		return nil, th.panicAt(e.Pos, PType, "", "%s is not a struct type", printer.Expr(e.Type))
+	}
+	return st, nil
+}
+
+func (th *Thread) structFieldIdx(st *StructType, f ast.FieldInit) (int, error) {
+	i, ok := st.FieldIdx[f.Name]
+	if !ok {
+		return 0, th.panicAt(f.Pos, PName, suggestHint(f.Name, fieldNames(st)), "%s has no field '%s'", st.Name, f.Name)
+	}
+	return i, nil
+}
+
+func (th *Thread) structFieldCheck(st *StructType, i int, f ast.FieldInit, v Value) error {
+	if !th.typeMatches(v, st.Fields[i].Type, st.Module, nil) {
+		return th.panicAt(f.Pos, PType, "", "field %s.%s has type %s, got %s", st.Name, f.Name, printer.Type(st.Fields[i].Type), TypeName(v))
+	}
+	return nil
+}
+
+// finishStruct fills defaults and checks missing fields.
+func (th *Thread) finishStruct(e *ast.StructLit, st *StructType, vals []Value, set []bool) (Value, error) {
 	for i, fi := range st.Fields {
 		if set[i] {
 			continue
@@ -187,7 +227,7 @@ func (th *Thread) evalStructLit(env *Env, e *ast.StructLit) (Value, error) {
 			}
 			return nil, th.panicAt(e.Pos, PArgs, "", "missing field '%s' in %s literal", fi.Name, st.Name)
 		}
-		v, err := th.in.newThread(st.Module).eval(st.Module.Env, fi.Default)
+		v, err := th.in.evalDetached(st.Module, st.Module.Env, fi.Default)
 		if err != nil {
 			return nil, err
 		}
@@ -216,9 +256,9 @@ func (th *Thread) evalIf(env *Env, e *ast.If) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	b, ok := c.(bool)
-	if !ok {
-		return nil, th.panicAt(e.Cond.P(), PType, "conditions must be Bool (no truthiness); e.g. x != nil, not xs.is_empty()", "if condition is %s, not Bool", TypeName(c))
+	b, err := th.ifCond(e, c)
+	if err != nil {
+		return nil, err
 	}
 	if b {
 		return th.blockValue(env, e.Then)
@@ -227,6 +267,26 @@ func (th *Thread) evalIf(env *Env, e *ast.If) (Value, error) {
 		return th.eval(env, e.Else)
 	}
 	return nil, nil
+}
+
+func (th *Thread) ifCond(e *ast.If, c Value) (bool, error) {
+	b, ok := c.(bool)
+	if !ok {
+		return false, th.panicAt(e.Cond.P(), PType, "conditions must be Bool (no truthiness); e.g. x != nil, not xs.is_empty()", "if condition is %s, not Bool", TypeName(c))
+	}
+	return b, nil
+}
+
+func (th *Thread) guardBool(arm *ast.MatchArm, g Value) (bool, error) {
+	gb, isBool := g.(bool)
+	if !isBool {
+		return false, th.panicAt(arm.Guard.P(), PType, "", "match guard is %s, not Bool", TypeName(g))
+	}
+	return gb, nil
+}
+
+func (th *Thread) noMatch(e *ast.Match, v Value) error {
+	return th.panicAt(e.Pos, PMatch, "add a '_ => ...' arm", "no match arm matches %s", Repr(v))
 }
 
 func (th *Thread) evalMatch(env *Env, e *ast.Match) (Value, error) {
@@ -253,9 +313,9 @@ func (th *Thread) evalMatch(env *Env, e *ast.Match) (Value, error) {
 				if err != nil {
 					return nil, err
 				}
-				gb, isBool := g.(bool)
-				if !isBool {
-					return nil, th.panicAt(arm.Guard.P(), PType, "", "match guard is %s, not Bool", TypeName(g))
+				gb, err := th.guardBool(arm, g)
+				if err != nil {
+					return nil, err
 				}
 				if !gb {
 					continue
@@ -264,7 +324,7 @@ func (th *Thread) evalMatch(env *Env, e *ast.Match) (Value, error) {
 			return th.eval(inner, arm.Body)
 		}
 	}
-	return nil, th.panicAt(e.Pos, PMatch, "add a '_ => ...' arm", "no match arm matches %s", Repr(v))
+	return nil, th.noMatch(e, v)
 }
 
 func (th *Thread) matchPattern(env *Env, p ast.Pattern, v Value, binds map[string]Value) (bool, error) {
@@ -340,6 +400,11 @@ func (th *Thread) evalIndex(env *Env, e *ast.Index) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
+	return th.indexValue(e, x, idx)
+}
+
+// indexValue computes x[idx] (element, key lookup or slice).
+func (th *Thread) indexValue(e *ast.Index, x, idx Value) (Value, error) {
 	switch c := x.(type) {
 	case *List:
 		if r, ok := idx.(*RangeVal); ok {
@@ -458,9 +523,10 @@ func (th *Thread) selector(e *ast.Selector, x Value) (Value, error) {
 	}
 	kind := TypeName(x)
 	if impls, ok := methodImpls[kind]; ok {
-		if fn, ok := impls[name]; ok {
-			decl := sig.Get("core").Methods[kind][name]
-			return &Builtin{Name: kind + "." + name, Decl: decl, Fn: fn, Recv: x, Mod: "core"}, nil
+		if tmpl := builtinMethod(kind, name); tmpl != nil {
+			b := *tmpl
+			b.Recv = x
+			return &b, nil
 		}
 		var names []string
 		for k := range impls {
@@ -473,6 +539,27 @@ func (th *Thread) selector(e *ast.Selector, x Value) (Value, error) {
 		return nil, th.panicAt(e.Pos, PNil, "check for nil first (x != nil) or use ??", "cannot access '%s' on nil", name)
 	}
 	return nil, th.panicAt(e.Pos, PType, "", "%s has no field or method '%s'", kind, name)
+}
+
+var (
+	methodTmplOnce sync.Once
+	methodTmpl     map[string]map[string]*Builtin
+)
+
+// builtinMethod returns the template (without receiver) of a method of a
+// builtin type, or nil.
+func builtinMethod(kind, name string) *Builtin {
+	methodTmplOnce.Do(func() {
+		methodTmpl = map[string]map[string]*Builtin{}
+		core := sig.Get("core")
+		for k, impls := range methodImpls {
+			methodTmpl[k] = map[string]*Builtin{}
+			for n, fn := range impls {
+				methodTmpl[k][n] = &Builtin{Name: k + "." + n, Decl: core.Methods[k][n], Fn: fn, Mod: "core"}
+			}
+		}
+	})
+	return methodTmpl[kind][name]
 }
 
 // ---------- calls ----------
@@ -510,6 +597,12 @@ func (th *Thread) evalCall(env *Env, c *ast.Call) (Value, error) {
 	}
 	th.top().pos = c.Pos
 	v, err := th.callValue(fnv, pos, named, c.Pos)
+	return th.finishCall(c, v, err)
+}
+
+// finishCall turns an unhandled failure into a panic and gives a
+// position to panics raised by builtins.
+func (th *Thread) finishCall(c *ast.Call, v Value, err error) (Value, error) {
 	if err != nil {
 		switch e := err.(type) {
 		case *Failure:
@@ -640,19 +733,28 @@ func (th *Thread) callBuiltin(b *Builtin, pos []Value, named []namedArg) (Value,
 }
 
 func (th *Thread) callFunction(f *Function, self Value, pos []Value, named []namedArg) (result Value, err error) {
-	env := NewEnv(f.Env)
-	if f.HasSelf {
-		env.Define("self", self, false)
-	}
-	vals, err := th.bindArgs(f.Name, f.Params, pos, named, f.Mod.Env)
-	if err != nil {
+	var vals []Value
+	if f.Proto != nil && len(named) == 0 && len(pos) == len(f.Params) && !hasVariadic(f.Params) {
+		vals = pos // exactly the positional arguments: nothing to bind
+	} else if vals, err = th.bindArgs(f.Name, f.Params, pos, named, f.Mod.Env); err != nil {
 		return nil, err
 	}
 	for i, p := range f.Params {
 		if p.Type != nil && !nilDefault(p, vals[i]) && !th.typeMatches(vals[i], p.Type, f.Mod, f.TypeParams) {
 			return nil, &Panic{Code: PType, Message: fmt.Sprintf("argument '%s' of %s must be %s, got %s", p.Name, f.Name, printer.Type(p.Type), TypeName(vals[i]))}
 		}
-		env.Define(p.Name, vals[i], false)
+	}
+	// the environment holds the parameters for interpreted bodies and for
+	// contracts (compiled bodies keep them in slots)
+	var env *Env
+	if f.Proto == nil || len(f.Requires) > 0 || len(f.Ensures) > 0 {
+		env = NewEnv(f.Env)
+		if f.HasSelf {
+			env.Define("self", self, false)
+		}
+		for i, p := range f.Params {
+			env.Define(p.Name, vals[i], false)
+		}
 	}
 	fr := &frame{name: f.Name, mod: f.Mod, pos: f.Pos}
 	th.frames = append(th.frames, fr)
@@ -668,7 +770,14 @@ func (th *Thread) callFunction(f *Function, self Value, pos []Value, named []nam
 			return nil, err
 		}
 	}
-	if f.ExprBody != nil {
+	if f.Proto != nil {
+		args := vals
+		if f.HasSelf {
+			args = append([]Value{self}, vals...)
+		}
+		result, err = th.runProto(f, f.Proto, args)
+		th.tryDepth = 0
+	} else if f.ExprBody != nil {
 		result, err = th.eval(env, f.ExprBody)
 	} else if f.Body != nil {
 		err = th.execBlock(env, f.Body)
@@ -748,20 +857,34 @@ func (th *Thread) evalSpawn(env *Env, e *ast.Spawn) (Value, error) {
 	if err != nil {
 		return nil, err
 	}
+	return th.spawnCall(fnv, pos, named, e.Call.Pos), nil
+}
+
+// spawnCall runs a call on a new goroutine and returns its Task.
+func (th *Thread) spawnCall(fnv Value, pos []Value, named []namedArg, callPos ast.Pos) *Task {
 	t := &Task{done: make(chan struct{})}
 	mod := th.mod()
-	callPos := e.Call.Pos
 	go func() {
 		nth := th.in.newThread(mod)
 		defer func() {
 			if r := recover(); r != nil {
 				t.err = &Panic{Code: PInternal, Message: fmt.Sprint("internal error in task: ", r)}
 			}
+			nth.flushSteps()
 			close(t.done)
 		}()
 		t.val, t.err = nth.callValue(fnv, pos, named, callPos)
 	}()
-	return t, nil
+	return t
+}
+
+func hasVariadic(params []*ast.Param) bool {
+	for _, p := range params {
+		if p.Variadic {
+			return true
+		}
+	}
+	return false
 }
 
 // nilDefault reports whether v is nil for a parameter whose default is nil

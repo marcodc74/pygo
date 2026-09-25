@@ -1,0 +1,28 @@
+fn count_primes(limit: Int) -> Int {
+    var count = 0
+    var n = 2
+    while n < limit {
+        var d = 2
+        var prime = true
+        while d * d <= n {
+            if n % d == 0 {
+                prime = false
+                break
+            }
+            d += 1
+        }
+        if prime {
+            count += 1
+        }
+        n += 1
+    }
+    return count
+}
+
+fn main() {
+    var total = 0
+    for i in 0..300000 {
+        total += i % 7
+    }
+    print(total, count_primes(60000))
+}

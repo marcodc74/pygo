@@ -2,6 +2,7 @@ package interp
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,14 +22,37 @@ func runSrc(t *testing.T, src string, allow ...string) (string, *Result) {
 	if diag.HasErrors(ds) {
 		t.Fatalf("parse errors: %v", ds)
 	}
-	var out bytes.Buffer
 	al := map[string]bool{}
 	for _, a := range allow {
 		al[a] = true
 	}
-	in := New(prog, Options{Stdout: &out, Stderr: &out, Allow: al, MaxSteps: 1_000_000})
-	res := in.Run()
-	return out.String(), res
+	return runBoth(t, prog, Options{Allow: al, MaxSteps: 1_000_000})
+}
+
+// runBoth runs a program on the interpreter and on the bytecode VM and
+// fails the test if the two engines disagree in any observable way.
+func runBoth(t *testing.T, prog *loader.Program, opt Options) (string, *Result) {
+	t.Helper()
+	var outT, outV bytes.Buffer
+	optT, optV := opt, opt
+	optT.Engine, optV.Engine = "tree", "vm"
+	optT.Stdout, optT.Stderr = &outT, &outT
+	optV.Stdout, optV.Stderr = &outV, &outV
+	resT := New(prog, optT).Run()
+	inV := New(prog, optV)
+	resV := inV.Run()
+	if fb := inV.VMFallbacks(); len(fb) > 0 {
+		t.Errorf("functions not compiled to bytecode: %v", fb)
+	}
+	if outT.String() != outV.String() {
+		t.Errorf("engines differ in output\n--- tree ---\n%s\n--- vm ---\n%s", outT.String(), outV.String())
+	}
+	jt, _ := json.MarshalIndent(resT, "", "  ")
+	jv, _ := json.MarshalIndent(resV, "", "  ")
+	if string(jt) != string(jv) {
+		t.Errorf("engines differ in result\n--- tree ---\n%s\n--- vm ---\n%s", jt, jv)
+	}
+	return outT.String(), resT
 }
 
 func expectOut(t *testing.T, src, want string) {

@@ -1,7 +1,6 @@
 package interp
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,13 +23,10 @@ func runPy(t *testing.T, src string, opt Options) (string, *Result) {
 	if diag.HasErrors(ds) {
 		t.Fatalf("parse errors: %v", ds)
 	}
-	var out bytes.Buffer
-	opt.Stdout, opt.Stderr = &out, &out
 	if opt.Allow == nil {
 		opt.Allow = map[string]bool{"python": true}
 	}
-	res := New(prog, opt).Run()
-	return out.String(), res
+	return runBoth(t, prog, opt)
 }
 
 func expectPy(t *testing.T, src, want string) {

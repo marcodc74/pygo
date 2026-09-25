@@ -34,21 +34,27 @@ func TestExamples(t *testing.T) {
 			if len(ds) > 0 {
 				t.Fatalf("diagnostics: %v", ds)
 			}
-			var out bytes.Buffer
-			in := interp.New(prog, interp.Options{Stdout: &out, Stderr: &out, Allow: parseAllow("all")})
-			for _, tr := range in.RunTests(nil, "") {
-				if !tr.Passed {
-					t.Errorf("test %q failed: %s", tr.Name, tr.Failure.Describe())
+			for _, engine := range []string{"tree", "vm"} {
+				var out bytes.Buffer
+				in := interp.New(prog, interp.Options{Stdout: &out, Stderr: &out, Allow: parseAllow("all"), Engine: engine})
+				for _, tr := range in.RunTests(nil, "") {
+					if !tr.Passed {
+						t.Errorf("%s: test %q failed: %s", engine, tr.Name, tr.Failure.Describe())
+					}
 				}
-			}
-			want, ok := golden[filepath.Base(f)]
-			if !ok {
-				return
-			}
-			var stdout bytes.Buffer
-			res := interp.New(prog, interp.Options{Stdout: &stdout, MaxSteps: 50_000_000}).Run()
-			if res.Status != "ok" || stdout.String() != want {
-				t.Fatalf("run: %s\n got: %q\nwant: %q", res.Describe(), stdout.String(), want)
+				want, ok := golden[filepath.Base(f)]
+				if !ok {
+					continue
+				}
+				var stdout bytes.Buffer
+				in = interp.New(prog, interp.Options{Stdout: &stdout, MaxSteps: 50_000_000, Engine: engine})
+				res := in.Run()
+				if res.Status != "ok" || stdout.String() != want {
+					t.Fatalf("%s: run: %s\n got: %q\nwant: %q", engine, res.Describe(), stdout.String(), want)
+				}
+				if fb := in.VMFallbacks(); len(fb) > 0 {
+					t.Errorf("not compiled to bytecode: %v", fb)
+				}
 			}
 		})
 	}

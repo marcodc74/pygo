@@ -45,6 +45,7 @@ func (in *Interp) Run() *Result {
 			return &Panic{Code: PName, Message: "no main function", File: in.prog.Main, Hint: "add: fn main() { ... }"}
 		}
 		th := in.newThread(m)
+		defer th.flushSteps()
 		_, err = th.callFunction(mainFn, nil, nil, nil)
 		return err
 	})
@@ -130,8 +131,17 @@ func (in *Interp) RunTests(files []string, filter string) []TestResult {
 			start := time.Now()
 			r := in.guard(func() error {
 				th := in.newThread(m)
+				defer th.flushSteps()
 				th.frames[0].name = "test " + fmt.Sprintf("%q", td.Name)
 				th.tryDepth = 1 // `try` at test top level propagates as a test failure
+				if in.opt.UseVM() {
+					p, cerr := compileFunc(th.frames[0].name, false, nil, td.Body, nil)
+					if cerr == nil {
+						_, err := th.runProto(&Function{Name: th.frames[0].name, Mod: m, Env: m.Env}, p, nil)
+						return err
+					}
+					in.vmFallback(th.frames[0].name, cerr)
+				}
 				err := th.execBlock(m.Env, td.Body)
 				if _, ok := err.(*returnSig); ok {
 					return nil

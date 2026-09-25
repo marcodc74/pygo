@@ -30,7 +30,11 @@ type Options struct {
 	Stderr   io.Writer
 	Stdin    io.Reader
 	Python   string // Python interpreter for extern python blocks ("" = PYGO_PYTHON or python3)
+	Engine   string // "tree" (default) or "vm" (bytecode virtual machine)
 }
+
+// UseVM reports whether function bodies run on the bytecode VM.
+func (o Options) UseVM() bool { return o.Engine == "vm" }
 
 type Interp struct {
 	opt      Options
@@ -50,6 +54,22 @@ type Interp struct {
 	errType  *StructType
 	py       *pyBridge
 	pyOnce   sync.Once
+	vmMu     sync.Mutex
+	vmFail   []string // functions left to the interpreter (compile errors)
+}
+
+// VMFallbacks lists the functions the bytecode compiler could not compile
+// (they ran on the interpreter), with the reason.
+func (in *Interp) VMFallbacks() []string {
+	in.vmMu.Lock()
+	defer in.vmMu.Unlock()
+	return append([]string(nil), in.vmFail...)
+}
+
+func (in *Interp) vmFallback(name string, err error) {
+	in.vmMu.Lock()
+	in.vmFail = append(in.vmFail, name+": "+err.Error())
+	in.vmMu.Unlock()
 }
 
 type syncWriter struct {
@@ -173,6 +193,7 @@ type Thread struct {
 	in       *Interp
 	frames   []*frame
 	tryDepth int
+	pending  int64 // steps not yet added to Interp.steps (no step budget)
 }
 
 func (in *Interp) newThread(mod *Module) *Thread {
@@ -210,14 +231,41 @@ func (th *Thread) trace() []string {
 
 func (th *Thread) step(pos ast.Pos) error {
 	th.top().pos = pos
+	if th.in.opt.MaxSteps == 0 {
+		// no budget: count locally, publish in batches (and at thread end)
+		th.pending++
+		if th.pending&1023 == 0 {
+			th.flushSteps()
+			if !th.in.deadline.IsZero() && time.Now().After(th.in.deadline) {
+				return th.panicAt(pos, PTimeout, "raise --timeout or look for an infinite loop / blocking call", "timeout of %s exceeded", th.in.opt.Timeout)
+			}
+		}
+		return nil
+	}
 	n := th.in.steps.Add(1)
-	if th.in.opt.MaxSteps > 0 && n > th.in.opt.MaxSteps {
+	if n > th.in.opt.MaxSteps {
 		return th.panicAt(pos, PBudget, "raise --max-steps or look for an infinite loop", "step budget of %d exhausted", th.in.opt.MaxSteps)
 	}
 	if n&1023 == 0 && !th.in.deadline.IsZero() && time.Now().After(th.in.deadline) {
 		return th.panicAt(pos, PTimeout, "raise --timeout or look for an infinite loop / blocking call", "timeout of %s exceeded", th.in.opt.Timeout)
 	}
 	return nil
+}
+
+// flushSteps adds the locally counted steps to the program total.
+func (th *Thread) flushSteps() {
+	if th.pending > 0 {
+		th.in.steps.Add(th.pending)
+		th.pending = 0
+	}
+}
+
+// evalDetached evaluates e on a short-lived thread of module m (defaults
+// of struct fields).
+func (in *Interp) evalDetached(m *Module, env *Env, e ast.Expr) (Value, error) {
+	th := in.newThread(m)
+	defer th.flushSteps()
+	return th.eval(env, e)
 }
 
 // ---------- modules ----------
@@ -271,6 +319,7 @@ func (in *Interp) stdModule(name string) *Module {
 		m.Members[fn] = b
 	}
 	th := in.newThread(m)
+	defer th.flushSteps()
 	for _, cn := range h.Order {
 		if cd, ok := h.Consts[cn]; ok {
 			v, err := th.eval(m.Env, cd.Let.Value)
@@ -393,6 +442,7 @@ func (in *Interp) Load(file string) (*Module, error) {
 		}
 	}
 	th := in.newThread(m)
+	defer th.flushSteps()
 	for _, d := range f.Decls {
 		if c, ok := d.(*ast.ConstDecl); ok {
 			v, err := th.eval(m.Env, c.Let.Value)
@@ -403,6 +453,7 @@ func (in *Interp) Load(file string) (*Module, error) {
 			m.Env.Define(c.Let.Name, v, false)
 		}
 	}
+	m.loaded.Store(true)
 	return m, nil
 }
 
@@ -423,6 +474,13 @@ func (in *Interp) makeFunc(d *ast.FuncDecl, m *Module, recv any) *Function {
 		f.TypeParams = map[string]bool{}
 		for _, tp := range d.TypeParams {
 			f.TypeParams[tp] = true
+		}
+	}
+	if in.opt.UseVM() {
+		// a body the compiler does not support stays on the interpreter
+		var err error
+		if f.Proto, err = compileFunc(name, d.HasSelf, d.Params, d.Body, d.ExprBody); err != nil {
+			in.vmFallback(name, err)
 		}
 	}
 	return f
@@ -472,8 +530,8 @@ func (th *Thread) exec(env *Env, s ast.Stmt) error {
 		if err != nil {
 			return err
 		}
-		if s.Type != nil && !th.typeMatches(v, s.Type, th.mod(), nil) {
-			return th.panicAt(s.Pos, PType, "", "cannot assign %s to '%s' of type %s", TypeName(v), s.Name, printer.Type(s.Type))
+		if err := th.letCheck(s, v); err != nil {
+			return err
 		}
 		env.Define(s.Name, v, s.Mutable)
 		return nil
@@ -525,15 +583,7 @@ func (th *Thread) exec(env *Env, s ast.Stmt) error {
 		if err != nil {
 			return err
 		}
-		switch e := v.(type) {
-		case string:
-			return &Failure{Err: th.in.newError(e, "", nil), Trace: th.trace()}
-		case *Struct:
-			if e.T == th.in.errType {
-				return &Failure{Err: e, Trace: th.trace()}
-			}
-		}
-		return th.panicAt(s.Pos, PType, `write fail error("message", code: "E_CODE")`, "fail requires an Error or Str, got %s", TypeName(v))
+		return th.failWith(s, v)
 	case *ast.Assert:
 		return th.execAssert(env, s)
 	case *ast.Defer:
@@ -643,7 +693,7 @@ func (th *Thread) execAssert(env *Env, s *ast.Assert) error {
 		}
 		cond = p.X
 	}
-	if b, isBin := cond.(*ast.Binary); isBin && b.Op != "and" && b.Op != "or" && b.Op != "??" {
+	if b := assertBinary(s); b != nil {
 		x, err := th.eval(env, b.X)
 		if err != nil {
 			return err
@@ -652,23 +702,17 @@ func (th *Thread) execAssert(env *Env, s *ast.Assert) error {
 		if err != nil {
 			return err
 		}
-		r, err := th.binaryValues(b, x, y)
-		if err != nil {
+		if ok, err = th.assertBinaryValues(b, x, y, values); err != nil {
 			return err
 		}
-		ok, _ = r.(bool)
-		values[printer.Expr(b.X)] = Repr(x)
-		values[printer.Expr(b.Y)] = Repr(y)
 	} else {
 		v, err := th.eval(env, s.Cond)
 		if err != nil {
 			return err
 		}
-		b, isBool := v.(bool)
-		if !isBool {
-			return th.panicAt(s.Pos, PType, "", "assert condition is %s, not Bool", TypeName(v))
+		if ok, err = th.assertCond(s, v); err != nil {
+			return err
 		}
-		ok = b
 		if !ok {
 			th.collectIdents(env, s.Cond, values)
 		}
@@ -676,30 +720,82 @@ func (th *Thread) execAssert(env *Env, s *ast.Assert) error {
 	if ok {
 		return nil
 	}
-	msg := "assertion failed: " + printer.Expr(s.Cond)
+	var msg Value
 	if s.Msg != nil {
 		m, err := th.eval(env, s.Msg)
 		if err != nil {
 			return err
 		}
-		msg += " (" + Str(m) + ")"
+		msg = m
+	}
+	return th.assertPanic(s, values, msg)
+}
+
+// assertBinary returns the comparison of an assert whose operands are
+// reported on failure (nil for other conditions).
+func assertBinary(s *ast.Assert) *ast.Binary {
+	cond := s.Cond
+	for {
+		p, isParen := cond.(*ast.Paren)
+		if !isParen {
+			break
+		}
+		cond = p.X
+	}
+	if b, isBin := cond.(*ast.Binary); isBin && b.Op != "and" && b.Op != "or" && b.Op != "??" {
+		return b
+	}
+	return nil
+}
+
+func (th *Thread) assertBinaryValues(b *ast.Binary, x, y Value, values map[string]string) (bool, error) {
+	r, err := th.binaryValues(b, x, y)
+	if err != nil {
+		return false, err
+	}
+	ok, _ := r.(bool)
+	values[printer.Expr(b.X)] = Repr(x)
+	values[printer.Expr(b.Y)] = Repr(y)
+	return ok, nil
+}
+
+func (th *Thread) assertCond(s *ast.Assert, v Value) (bool, error) {
+	b, isBool := v.(bool)
+	if !isBool {
+		return false, th.panicAt(s.Pos, PType, "", "assert condition is %s, not Bool", TypeName(v))
+	}
+	return b, nil
+}
+
+// assertPanic builds the failed-assertion panic (msg is the evaluated
+// message, or nil when the assert has none).
+func (th *Thread) assertPanic(s *ast.Assert, values map[string]string, msg Value) error {
+	text := "assertion failed: " + printer.Expr(s.Cond)
+	if s.Msg != nil {
+		text += " (" + Str(msg) + ")"
 	}
 	for k, v := range values {
 		if k == v {
 			delete(values, k)
 		}
 	}
-	p := th.panicAt(s.Pos, PAssert, "", "%s", msg)
+	p := th.panicAt(s.Pos, PAssert, "", "%s", text)
 	p.Values = values
 	return p
 }
 
 // collectIdents records the current values of the identifiers in e.
 func (th *Thread) collectIdents(env *Env, e ast.Expr, out map[string]string) {
+	collectIdentValues(e, env.Get, out)
+}
+
+// collectIdentValues records the values (looked up with get) of the
+// identifiers and ident.field selectors in e.
+func collectIdentValues(e ast.Expr, get func(string) (Value, bool), out map[string]string) {
 	walkExpr(e, func(x ast.Expr) {
 		switch x := x.(type) {
 		case *ast.Ident:
-			if v, ok := env.Get(x.Name); ok {
+			if v, ok := get(x.Name); ok {
 				switch v.(type) {
 				case *Builtin, *Function, *Module, *StructType, *EnumType:
 					return
@@ -708,7 +804,7 @@ func (th *Thread) collectIdents(env *Env, e ast.Expr, out map[string]string) {
 			}
 		case *ast.Selector:
 			if id, ok := x.X.(*ast.Ident); ok {
-				if v, ok := env.Get(id.Name); ok {
+				if v, ok := get(id.Name); ok {
 					if s, ok := v.(*Struct); ok {
 						if f, ok := s.Field(x.Name); ok {
 							out[id.Name+"."+x.Name] = Repr(f)
@@ -725,13 +821,7 @@ func (th *Thread) assign(env *Env, s *ast.Assign) error {
 	if err != nil {
 		return err
 	}
-	compute := func(old Value) (Value, error) {
-		if s.Op == "=" {
-			return val, nil
-		}
-		b := &ast.Binary{Pos: s.Pos, Op: strings.TrimSuffix(s.Op, "=")}
-		return th.binaryValues(b, old, val)
-	}
+	compute := func(old Value) (Value, error) { return th.assignCompute(s, old, val) }
 	switch t := s.Target.(type) {
 	case *ast.Ident:
 		var nv Value = val
@@ -757,6 +847,34 @@ func (th *Thread) assign(env *Env, s *ast.Assign) error {
 		if err != nil {
 			return err
 		}
+		return th.assignField(s, t, obj, val)
+	case *ast.Index:
+		obj, err := th.eval(env, t.X)
+		if err != nil {
+			return err
+		}
+		key, err := th.eval(env, t.Index)
+		if err != nil {
+			return err
+		}
+		return th.assignIndex(s, t, obj, key, val)
+	}
+	return th.panicAt(s.Pos, PInternal, "", "bad assignment target")
+}
+
+// assignCompute returns the value to store for s given the old value.
+func (th *Thread) assignCompute(s *ast.Assign, old, val Value) (Value, error) {
+	if s.Op == "=" {
+		return val, nil
+	}
+	b := &ast.Binary{Pos: s.Pos, Op: strings.TrimSuffix(s.Op, "=")}
+	return th.binaryValues(b, old, val)
+}
+
+// assignField performs obj.f (op)= val.
+func (th *Thread) assignField(s *ast.Assign, t *ast.Selector, obj, val Value) error {
+	compute := func(old Value) (Value, error) { return th.assignCompute(s, old, val) }
+	{
 		st, ok := obj.(*Struct)
 		if !ok {
 			return th.panicAt(t.Pos, PType, "", "cannot set field '%s' on %s", t.Name, TypeName(obj))
@@ -775,15 +893,14 @@ func (th *Thread) assign(env *Env, s *ast.Assign) error {
 		}
 		st.SetField(t.Name, nv)
 		return nil
-	case *ast.Index:
-		obj, err := th.eval(env, t.X)
-		if err != nil {
-			return err
-		}
-		key, err := th.eval(env, t.Index)
-		if err != nil {
-			return err
-		}
+	}
+}
+
+// assignIndex performs obj[key] (op)= val.
+func (th *Thread) assignIndex(s *ast.Assign, t *ast.Index, obj, key, val Value) error {
+	var err error
+	compute := func(old Value) (Value, error) { return th.assignCompute(s, old, val) }
+	{
 		switch c := obj.(type) {
 		case *List:
 			i, ok := key.(int64)
@@ -829,7 +946,6 @@ func (th *Thread) assign(env *Env, s *ast.Assign) error {
 		}
 		return th.panicAt(t.Pos, PType, "", "cannot assign by index to %s", TypeName(obj))
 	}
-	return th.panicAt(s.Pos, PInternal, "", "bad assignment target")
 }
 
 func (th *Thread) checkKey(pos ast.Pos, k Value) error {
@@ -880,4 +996,25 @@ func walkExpr(e ast.Expr, f func(ast.Expr)) {
 	case *ast.Catch:
 		walkExpr(e.X, f)
 	}
+}
+
+// failWith raises the failure of a `fail` statement.
+func (th *Thread) failWith(s *ast.Fail, v Value) error {
+	switch e := v.(type) {
+	case string:
+		return &Failure{Err: th.in.newError(e, "", nil), Trace: th.trace()}
+	case *Struct:
+		if e.T == th.in.errType {
+			return &Failure{Err: e, Trace: th.trace()}
+		}
+	}
+	return th.panicAt(s.Pos, PType, `write fail error("message", code: "E_CODE")`, "fail requires an Error or Str, got %s", TypeName(v))
+}
+
+// letCheck validates the annotated type of a let/var declaration.
+func (th *Thread) letCheck(s *ast.Let, v Value) error {
+	if s.Type != nil && !th.typeMatches(v, s.Type, th.mod(), nil) {
+		return th.panicAt(s.Pos, PType, "", "cannot assign %s to '%s' of type %s", TypeName(v), s.Name, printer.Type(s.Type))
+	}
+	return nil
 }

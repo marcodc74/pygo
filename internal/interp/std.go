@@ -491,6 +491,7 @@ func (th *Thread) httpServe(addr string, handler Value) (Value, error) {
 					err = &Panic{Code: PInternal, Message: fmt.Sprint(p)}
 				}
 			}()
+			defer nth.flushSteps()
 			res, err = nth.callValue(handler, []Value{req}, nil, ast.Pos{})
 		}()
 		if err != nil {
@@ -816,7 +817,7 @@ func (th *Thread) convert(v Value, te *ast.TypeExpr, m *Module, path string) (Va
 			raw, present := obj.Get(f.Name)
 			if !present {
 				if f.Default != nil {
-					d, err := th.in.newThread(t.Module).eval(t.Module.Env, f.Default)
+					d, err := th.in.evalDetached(t.Module, t.Module.Env, f.Default)
 					if err != nil {
 						return nil, err.Error()
 					}

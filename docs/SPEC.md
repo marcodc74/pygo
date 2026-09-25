@@ -455,9 +455,51 @@ extern python "module.path" [as name] {
   Pygo capabilities, a step budget, a timeout and a deny-all
   NetworkPolicy.
 
-## 16. Roadmap (not in v0.1)
+## 16. Execution engines
 
-- a compiled backend (Go or WASM code generation);
+Pygo has two engines with identical observable behavior:
+
+- `tree` (the default in v0.1): walks the syntax tree;
+- `vm`: a bytecode virtual machine, selected with `--engine vm` on
+  `run` and `test`.
+
+The VM compiles each function into a flat instruction list for a stack
+machine:
+- local variables live in numbered slots;
+- variables captured by closures live in shared cells (safe across
+  `spawn`);
+- `try`/`catch` become handler instructions.
+
+It reuses the runtime of the interpreter (values, operators, stdlib,
+Python bridge, calls, contracts, `defer`, tasks). The two engines can
+call each other.
+
+The guarantees:
+- same output, same result, same panic (code, message, position, values
+  and trace), same failure;
+- same number of steps, so `--max-steps` stops both at the same statement.
+
+The test suite runs every program on both engines and compares all of
+this. A function the compiler cannot handle stays on the interpreter;
+the tests require that no such function exists.
+
+Measured on the programs in `bench/` (`go test -bench . ./internal/interp/`):
+
+| Program | tree | vm | speed-up |
+|---|---|---|---|
+| `fib.pg` (recursive calls) | 462 ms | 135 ms | 3.4x |
+| `loops.pg` (loops, arithmetic) | 765 ms | 219 ms | 3.5x |
+| `sort.pg` (merge sort, list ops) | 538 ms | 326 ms | 1.7x |
+| `json.pg` (encode/decode, stdlib-bound) | 45 ms | 38 ms | 1.2x |
+
+The VM helps most with code written in Pygo: loops, arithmetic and
+calls. It helps least with work done by the stdlib, which both engines
+share.
+
+## 17. Roadmap (not in v0.1)
+
+- a versioned bytecode file format (`.pgc`) and the VM as default engine;
+- a WebAssembly backend;
 - traits/interfaces;
 - `select` on multiple channels;
 - effect polymorphism for higher-order functions;

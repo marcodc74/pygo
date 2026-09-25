@@ -149,6 +149,7 @@ In alternativa puoi compilare dai sorgenti (serve Go >= 1.22):
 ./pygo run examples/hello.pg
 ./pygo run --allow fs,net app.pg -- arg1 arg2
 ./pygo run -e 'print([1, 2, 3].map(fn(x) => x * x).sum())'
+./pygo run --engine vm app.pg        # macchina virtuale a bytecode (3x+ su cicli e chiamate)
 ./pygo check --json app.pg           # diagnostica per agenti
 ./pygo test examples/                # esegue i blocchi test "..." {}
 ```
@@ -289,7 +290,10 @@ internal/parser     parser a discesa ricorsiva con recupero dagli errori
 internal/ast        AST, visitor, export JSON
 internal/sig        firme della stdlib (file .pg incorporati nel binario)
 internal/check      checker statico: nomi, tipi, fallibilità, effetti, nil, esaustività, correzioni
-internal/interp     interprete, valori thread-safe, stdlib, goroutine per spawn/chan
+internal/interp     runtime: valori thread-safe, stdlib, goroutine per spawn/chan;
+                    due motori, l'interprete ad albero e la VM a bytecode
+                    (vm_compile.go compila, vm.go esegue)
+bench/              programmi di benchmark per confrontare i motori
 internal/printer    stampa canonica dell'AST (pygo fmt)
 internal/loader     moduli locali (import "./x"), cicli, bundle
 internal/guide      guida compatta per il contesto dei modelli
@@ -309,11 +313,14 @@ v0.1.
 - **Distribuzione:** cross-compilazione per 6 piattaforme.
 - **Docker:** immagini costruite e provate (l'app risponde, lo shutdown è pulito, la sandbox blocca cicli infiniti e permessi mancanti).
 - **Kubernetes:** i manifest sono sintatticamente validi, ma non li ho applicati a un cluster reale.
+- **VM a bytecode** (`--engine vm`): compilatore e macchina virtuale propri di Pygo,
+  da 1,2 a 3,5 volte più veloce dell'interprete (vedi SPEC §16). Ogni programma di test
+  gira su entrambi i motori, che devono dare output, errori, trace e numero di passi identici.
 - **Test:** unit test, test golden sugli esempi e race detector passano.
 - **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
 **Roadmap:**
-- VM a bytecode di Pygo con formato `.pgc` (in corso);
+- formato bytecode `.pgc`, `pygo compile`/`disasm` e VM come motore predefinito (in corso);
 - firma digitale dei binari Windows (Authenticode);
 - backend WebAssembly;
 - trait e interfacce;
