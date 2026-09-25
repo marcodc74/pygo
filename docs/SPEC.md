@@ -1,4 +1,4 @@
-# Pygo Language Specification — v0.1
+# Pygo Language Specification — v0.2
 
 Pygo is a general-purpose language whose primary author and reader is an AI
 model (LLM or agent). Human readability is not a design goal. The design

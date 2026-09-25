@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"time"
@@ -19,7 +20,17 @@ import (
 	"github.com/marcodc74/pygo/internal/sig"
 )
 
-var version = "0.1.0-dev"
+var version = "0.2.0-dev" // set by the release build (-ldflags -X main.version=...)
+
+func init() {
+	// `go install .../cmd/pygo@vX.Y.Z` builds without ldflags: take the
+	// version from the module metadata instead.
+	if strings.HasSuffix(version, "-dev") {
+		if bi, ok := debug.ReadBuildInfo(); ok && strings.HasPrefix(bi.Main.Version, "v") {
+			version = bi.Main.Version
+		}
+	}
+}
 
 const usage = `pygo - AI-first programming language toolchain
 
