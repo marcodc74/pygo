@@ -1,6 +1,6 @@
 # Pygo installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/marcodc74/pygo/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/marcodc74/pygo/master/install.ps1 | iex
 #
 # Downloads the pygo binary for this machine (x64 or ARM64) from the GitHub
 # release, verifies it against SHA256SUMS, installs it in
