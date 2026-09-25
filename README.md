@@ -81,23 +81,23 @@ Altri esempi sono in [`examples/`](examples/).
 ## Installazione
 
 Scarica il binario per il tuo sistema dalla release
-**[v0.1.0](https://github.com/marcodc74/pygo/releases/tag/v0.1.0)**.
+**[v0.2.0](https://github.com/marcodc74/pygo/releases/tag/v0.2.0)**.
 Non ha dipendenze: basta un file.
 
 | Sistema | File |
 |---|---|
-| Linux x86-64 | [`pygo-linux-amd64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-linux-amd64) |
-| Linux ARM64 | [`pygo-linux-arm64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-linux-arm64) |
-| macOS Intel | [`pygo-darwin-amd64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-darwin-amd64) |
-| macOS Apple Silicon | [`pygo-darwin-arm64`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-darwin-arm64) |
-| Windows x86-64 | [`pygo-windows-amd64.exe`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-windows-amd64.exe) |
-| Windows ARM64 | [`pygo-windows-arm64.exe`](https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-windows-arm64.exe) |
+| Linux x86-64 | [`pygo-linux-amd64`](https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-linux-amd64) |
+| Linux ARM64 | [`pygo-linux-arm64`](https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-linux-arm64) |
+| macOS Intel | [`pygo-darwin-amd64`](https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-darwin-amd64) |
+| macOS Apple Silicon | [`pygo-darwin-arm64`](https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-darwin-arm64) |
+| Windows x86-64 | [`pygo-windows-amd64.exe`](https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-windows-amd64.exe) |
+| Windows ARM64 | [`pygo-windows-arm64.exe`](https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-windows-arm64.exe) |
 
 Esempio su Linux x86-64:
 
 ```sh
-curl -fsSLO https://github.com/marcodc74/pygo/releases/download/v0.1.0/pygo-linux-amd64
-curl -fsSLO https://github.com/marcodc74/pygo/releases/download/v0.1.0/SHA256SUMS
+curl -fsSLO https://github.com/marcodc74/pygo/releases/download/v0.2.0/pygo-linux-amd64
+curl -fsSLO https://github.com/marcodc74/pygo/releases/download/v0.2.0/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS     # verifica l'integrità
 chmod +x pygo-linux-amd64 && sudo mv pygo-linux-amd64 /usr/local/bin/pygo
 pygo version
@@ -120,7 +120,7 @@ Lo script ([`install.ps1`](install.ps1)):
 - lo installa in `%LOCALAPPDATA%\Programs\pygo\pygo.exe` e aggiunge la cartella al PATH dell'utente.
 
 Non servono diritti di amministratore. Per una versione precisa, prima di lanciarlo imposta
-`$env:PYGO_VERSION = "v0.1.0"`; per un'altra cartella, `$env:PYGO_DIR = "C:\tools\pygo"`.
+`$env:PYGO_VERSION = "v0.2.0"`; per un'altra cartella, `$env:PYGO_DIR = "C:\tools\pygo"`.
 Dopo l'installazione apri un nuovo terminale e prova `pygo version`.
 
 **Avvisi di sicurezza.** Per ora i binari di Pygo non hanno una firma digitale (Authenticode),
@@ -132,7 +132,7 @@ evita di solito questi blocchi.
 - **Microsoft Defender mette il file in quarantena:** è un falso positivo frequente per i programmi
   compilati con Go. Ripristinalo da *Sicurezza di Windows → Protezione da virus e minacce →
   Cronologia protezione*, e se vuoi segnalalo a Microsoft come falso positivo.
-- **Senza scaricare eseguibili:** se hai Go installato, `go install github.com/marcodc74/pygo/cmd/pygo@v0.1.0`
+- **Senza scaricare eseguibili:** se hai Go installato, `go install github.com/marcodc74/pygo/cmd/pygo@v0.2.0`
   compila pygo sul tuo PC e di solito non attiva SmartScreen.
 
 La firma digitale dei binari Windows è in programma: eliminerà la maggior parte di questi avvisi.
@@ -324,7 +324,7 @@ examples/           hello, errors, concurrency, server (HTTP), wordcount (CLI su
 
 ## Stato
 
-v0.1.
+v0.2.
 
 **Fatto e testato:**
 - **Linguaggio e checker:** linguaggio completo, checker statico, interprete, stdlib e concorrenza.
