@@ -24,11 +24,13 @@ var version = "0.1.0-dev"
 const usage = `pygo - AI-first programming language toolchain
 
 usage:
-  pygo run      [--allow caps] [--max-steps N] [--timeout D] [--seed N] [--engine tree|vm] [--json] file.pg [-- args]
+  pygo run      [--allow caps] [--max-steps N] [--timeout D] [--seed N] [--engine vm|tree] [--json] file.pg|app.pgc [-- args]
   pygo run      [--allow caps] -e 'code'        run a snippet (imports first, the rest becomes main)
   pygo check    [--json] file.pg                static check (diagnostics with codes, hints, fixes)
   pygo fix      [--all] [--dry-run] [--json] file.pg   apply machine fixes
-  pygo test     [--json] [--filter s] [--engine tree|vm] file.pg|dir
+  pygo test     [--json] [--filter s] [--engine vm|tree] file.pg|app.pgc|dir
+  pygo compile  [-o app.pgc] [--json] file.pg   check and compile to bytecode (.pgc)
+  pygo disasm   [--json] [--fn name] file.pg|app.pgc   show the bytecode
   pygo fmt      [-w] [--check] file.pg          canonical formatting
   pygo guide    [--stdlib]                      compact language reference for an AI context
   pygo explain  [--json] [CODE]                 explain a diagnostic/runtime code
@@ -36,7 +38,7 @@ usage:
   pygo outline  file.pg                         symbols with content hashes (JSON)
   pygo edit     file.pg --replace KEY | --insert-after KEY | --append | --delete KEY [--expect-hash H]
   pygo ast      file.pg                         syntax tree as JSON
-  pygo build    [--allow caps] [--runtime bin] -o app file.pg   self-contained executable
+  pygo build    [--allow caps] [--runtime bin] [--source] -o app file.pg   self-contained executable (bytecode)
   pygo extern   python MODULE [NAME ...]        draft extern block from Python signatures
   pygo version
 
@@ -79,6 +81,10 @@ func main() {
 		os.Exit(cmdAST(args))
 	case "build":
 		os.Exit(cmdBuild(args))
+	case "compile":
+		os.Exit(cmdCompile(args))
+	case "disasm":
+		os.Exit(cmdDisasm(args))
 	case "extern":
 		os.Exit(cmdExtern(args))
 	case "version", "--version":
@@ -179,7 +185,7 @@ func cmdRun(args []string) int {
 	asJSON := fs.Bool("json", false, "print diagnostics and the run result as JSON (result on stderr)")
 	snippet := fs.String("e", "", "run this code instead of a file")
 	python := fs.String("python", "", "Python interpreter for extern python blocks (default: PYGO_PYTHON or python3)")
-	engine := fs.String("engine", "tree", "execution engine: tree (interpreter) or vm (bytecode virtual machine)")
+	engine := fs.String("engine", "vm", "execution engine: vm (bytecode virtual machine) or tree (interpreter)")
 	fs.Parse(args)
 	if !validEngine(*engine) {
 		return 2
@@ -208,9 +214,9 @@ func cmdRun(args []string) int {
 	if len(progArgs) > 0 && progArgs[0] == "--" {
 		progArgs = progArgs[1:]
 	}
-	prog, ds, ok := loadWith(file, read, *asJSON, false)
+	prog, compiled, ds, ok := loadRunnable(file, read, *asJSON)
 	if !ok {
-		if *asJSON {
+		if *asJSON && ds != nil {
 			fmt.Fprintln(os.Stderr, diag.JSON(ds))
 		}
 		return interp.ExitCompile
@@ -219,7 +225,7 @@ func cmdRun(args []string) int {
 	if code := preflight(prog, allow, *asJSON); code != 0 {
 		return code
 	}
-	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs, Python: *python, Engine: *engine})
+	in := interp.New(prog, interp.Options{Allow: allow, MaxSteps: *maxSteps, Timeout: *timeout, Seed: *seed, Args: progArgs, Python: *python, Engine: *engine, Compiled: compiled})
 	res := in.Run()
 	if *asJSON {
 		fmt.Fprintln(os.Stderr, compactJSON(res))
@@ -257,7 +263,7 @@ func cmdTest(args []string) int {
 	filter := fs.String("filter", "", "run only tests whose name contains this text")
 	allowS := fs.String("allow", "all", "granted capabilities for tests")
 	python := fs.String("python", "", "Python interpreter for extern python blocks")
-	engine := fs.String("engine", "tree", "execution engine: tree or vm")
+	engine := fs.String("engine", "vm", "execution engine: vm or tree")
 	fs.Parse(args)
 	if !validEngine(*engine) {
 		return 2
@@ -288,13 +294,13 @@ func cmdTest(args []string) int {
 	rep := report{OK: true}
 	start := time.Now()
 	for _, f := range files {
-		prog, ds, ok := load(f, *asJSON, false)
+		prog, compiled, ds, ok := loadRunnable(f, nil, *asJSON)
 		if !ok {
 			rep.OK = false
 			rep.Diagnostics = append(rep.Diagnostics, ds...)
 			continue
 		}
-		in := interp.New(prog, interp.Options{Allow: parseAllow(*allowS), Timeout: time.Minute, Python: *python, Engine: *engine})
+		in := interp.New(prog, interp.Options{Allow: parseAllow(*allowS), Timeout: time.Minute, Python: *python, Engine: *engine, Compiled: compiled})
 		for _, tr := range in.RunTests([]string{prog.Main}, *filter) {
 			rep.Tests = append(rep.Tests, tr)
 			if tr.Passed {

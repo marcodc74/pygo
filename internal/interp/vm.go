@@ -116,8 +116,8 @@ type Instr struct {
 }
 
 type upvalDesc struct {
-	fromLocal bool // captured from the enclosing function's slot (else its upvalue)
-	index     int
+	FromLocal bool // captured from the enclosing function's slot (else its upvalue)
+	Index     int
 }
 
 // Proto is a compiled function body.
@@ -128,13 +128,40 @@ type Proto struct {
 	Consts     []Value
 	Aux        []any // AST nodes and tables used by instructions (errors, patterns)
 	NumSlots   int
-	MaxStack   int    // operand stack depth reached (from the compiler)
-	Boxed      []bool // slot holds a *Cell (captured by a closure)
-	ParamSlots []int  // self (if any) then parameters
+	MaxStack   int      // operand stack depth reached (from the compiler)
+	Boxed      []bool   // slot holds a *Cell (captured by a closure)
+	SlotNames  []string // variable of each slot ($-names are temporaries)
+	ParamSlots []int    // self (if any) then parameters
 	Upvals     []upvalDesc
 	Protos     []*Proto
 	Lit        *ast.FuncLit // for lambdas
+	NumGlobals int          // module-level names used (one cache entry each)
 	globals    []globalCache
+}
+
+// instance returns a copy of p with its own runtime caches: the code and
+// tables are shared, the cache of module-level names (which holds values
+// of one Interp) is not. Used when the same compiled bytecode runs in
+// several interpreters.
+func (p *Proto) instance() *Proto {
+	q := *p
+	q.globals = make([]globalCache, p.NumGlobals)
+	if len(p.Protos) > 0 {
+		q.Protos = make([]*Proto, len(p.Protos))
+		for i, n := range p.Protos {
+			q.Protos[i] = n.instance()
+		}
+	}
+	return &q
+}
+
+// prepare allocates the runtime caches of p and its nested functions
+// (after compiling or decoding).
+func (p *Proto) prepare() {
+	p.globals = make([]globalCache, p.NumGlobals)
+	for _, q := range p.Protos {
+		q.prepare()
+	}
 }
 
 type globalCache struct {
@@ -172,15 +199,16 @@ type vmHandler struct {
 // matchInfo is the Aux entry of OpMatchPat: the pattern and the slot that
 // receives each binding.
 type matchInfo struct {
-	pat   ast.Pattern
-	slots map[string]int
-	boxed map[string]bool
+	Pat   ast.Pattern
+	Names []string // names the pattern may bind
+	Slots []int
+	Boxed []bool
 }
 
 // assertInfo is the Aux entry of OpAssertCollect.
 type assertInfo struct {
-	s     *ast.Assert
-	names []string
+	S     *ast.Assert
+	Names []string
 }
 
 // runProto executes a compiled body. slots holds self and the arguments in
@@ -504,15 +532,15 @@ func (th *Thread) runProto(f *Function, p *Proto, args []Value) (Value, error) {
 			mi := p.Aux[in.A].(*matchInfo)
 			binds := map[string]Value{}
 			var ok bool
-			ok, err = th.matchPattern(th.in.universe, mi.pat, slots[in.B], binds)
+			ok, err = th.matchPattern(th.in.universe, mi.Pat, slots[in.B], binds)
 			if err == nil {
 				if ok {
-					for name, s := range mi.slots {
+					for i, name := range mi.Names {
 						v := binds[name]
-						if mi.boxed[name] {
-							slots[s] = &Cell{v: v}
+						if mi.Boxed[i] {
+							slots[mi.Slots[i]] = &Cell{v: v}
 						} else {
-							slots[s] = v
+							slots[mi.Slots[i]] = v
 						}
 					}
 				}
@@ -547,15 +575,15 @@ func (th *Thread) runProto(f *Function, p *Proto, args []Value) (Value, error) {
 			}
 		case OpAssertCollect:
 			ai := p.Aux[in.A].(*assertInfo)
-			n := len(ai.names)
+			n := len(ai.Names)
 			vals := map[string]Value{}
-			for i, name := range ai.names {
+			for i, name := range ai.Names {
 				if v := stack[len(stack)-n+i]; v != (vmMissing{}) {
 					vals[name] = v
 				}
 			}
 			stack = stack[:len(stack)-n]
-			collectIdentValues(ai.s.Cond, func(name string) (Value, bool) {
+			collectIdentValues(ai.S.Cond, func(name string) (Value, bool) {
 				v, ok := vals[name]
 				return v, ok
 			}, pending)
@@ -691,10 +719,10 @@ func (th *Thread) vmClosure(f *Function, p *Proto, slots []Value) *Function {
 	}
 	up := make([]*Cell, len(p.Upvals))
 	for i, u := range p.Upvals {
-		if u.fromLocal {
-			up[i] = slots[u.index].(*Cell)
+		if u.FromLocal {
+			up[i] = slots[u.Index].(*Cell)
 		} else {
-			up[i] = f.Upvals[u.index]
+			up[i] = f.Upvals[u.Index]
 		}
 	}
 	return &Function{

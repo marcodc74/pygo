@@ -37,6 +37,17 @@ jobs:
           go build -o pygo-bin ./cmd/pygo
           for f in examples/*.pg; do ./pygo-bin check "$f"; done
           ./pygo-bin test examples/
+      - name: examples from bytecode (.pgc)
+        shell: bash
+        run: |
+          mkdir -p itest
+          for f in examples/*.pg; do
+            n=$(basename "$f" .pg)
+            ./pygo-bin compile -o "itest/$n.pgc" "$f"
+            ./pygo-bin test "itest/$n.pgc"
+          done
+          ./pygo-bin run itest/hello.pgc
+          ./pygo-bin disasm --fn main itest/hello.pgc > /dev/null
       - name: LLM integration tools (self-test)
         shell: bash
         run: |

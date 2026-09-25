@@ -29,12 +29,25 @@ type Options struct {
 	Stdout   io.Writer
 	Stderr   io.Writer
 	Stdin    io.Reader
-	Python   string // Python interpreter for extern python blocks ("" = PYGO_PYTHON or python3)
-	Engine   string // "tree" (default) or "vm" (bytecode virtual machine)
+	Python   string    // Python interpreter for extern python blocks ("" = PYGO_PYTHON or python3)
+	Engine   string    // "vm" (bytecode virtual machine, default) or "tree" (interpreter)
+	Compiled *Compiled // bytecode already compiled (from a .pgc file); nil = compile at load; can be shared
 }
 
 // UseVM reports whether function bodies run on the bytecode VM.
-func (o Options) UseVM() bool { return o.Engine == "vm" }
+func (o Options) UseVM() bool { return o.Engine != "tree" }
+
+// precompiled returns the stored bytecode for a declaration, if any.
+func (in *Interp) precompiled(d *ast.FuncDecl) (*Proto, bool) {
+	if in.opt.Compiled == nil {
+		return nil, false
+	}
+	p := in.opt.Compiled.Funcs[d]
+	if p == nil {
+		return nil, false
+	}
+	return p.instance(), true
+}
 
 type Interp struct {
 	opt      Options
@@ -477,10 +490,14 @@ func (in *Interp) makeFunc(d *ast.FuncDecl, m *Module, recv any) *Function {
 		}
 	}
 	if in.opt.UseVM() {
-		// a body the compiler does not support stays on the interpreter
-		var err error
-		if f.Proto, err = compileFunc(name, d.HasSelf, d.Params, d.Body, d.ExprBody); err != nil {
-			in.vmFallback(name, err)
+		if p, ok := in.precompiled(d); ok {
+			f.Proto = p
+		} else {
+			// a body the compiler does not support stays on the interpreter
+			var err error
+			if f.Proto, err = compileFunc(name, d.HasSelf, d.Params, d.Body, d.ExprBody); err != nil {
+				in.vmFallback(name, err)
+			}
 		}
 	}
 	return f

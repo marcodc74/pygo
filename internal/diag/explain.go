@@ -80,6 +80,7 @@ var Explanations = map[string]Explanation{
 
 	"E0901": {Title: "break/continue outside loop", Detail: "break and continue are only valid inside for/while."},
 	"E0903": {Title: "self outside method", Detail: "self is only available in impl methods that declare it as first parameter."},
+	"E0910": {Title: "invalid bytecode file", Detail: "the .pgc file is corrupted, truncated, not a Pygo bytecode file, or was compiled by an incompatible pygo version. Compile the source again with pygo compile."},
 	"E0904": {Title: "invalid main", Detail: "main takes no parameters (use os.args()) and returns nothing: fn main() or fn main() -> !."},
 	"W0905": {Title: "unreachable code", Detail: "The statement follows a return/fail and never runs."},
 	"W0907": {Title: "unused value", Detail: "An expression statement computes a value that is discarded (did you mean '=' instead of '=='?)."},

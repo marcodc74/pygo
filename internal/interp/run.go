@@ -135,7 +135,13 @@ func (in *Interp) RunTests(files []string, filter string) []TestResult {
 				th.frames[0].name = "test " + fmt.Sprintf("%q", td.Name)
 				th.tryDepth = 1 // `try` at test top level propagates as a test failure
 				if in.opt.UseVM() {
-					p, cerr := compileFunc(th.frames[0].name, false, nil, td.Body, nil)
+					var p *Proto
+					var cerr error
+					if in.opt.Compiled != nil && in.opt.Compiled.Tests[td] != nil {
+						p = in.opt.Compiled.Tests[td].instance()
+					} else {
+						p, cerr = compileFunc(th.frames[0].name, false, nil, td.Body, nil)
+					}
 					if cerr == nil {
 						_, err := th.runProto(&Function{Name: th.frames[0].name, Mod: m, Env: m.Env}, p, nil)
 						return err

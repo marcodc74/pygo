@@ -34,9 +34,28 @@ func TestExamples(t *testing.T) {
 			if len(ds) > 0 {
 				t.Fatalf("diagnostics: %v", ds)
 			}
-			for _, engine := range []string{"tree", "vm"} {
+			for _, engine := range []string{"tree", "vm", "pgc"} {
+				prog := prog
+				var compiled *interp.Compiled
+				if engine == "pgc" { // through a .pgc file and an executable bundle
+					c, fb := interp.CompileProgram(prog)
+					if len(fb) > 0 {
+						t.Errorf("not compiled: %v", fb)
+					}
+					data, err := interp.EncodePgc(prog, c, version)
+					if err != nil {
+						t.Fatal(err)
+					}
+					caps, pgc, err := readBytecodeBundle(makeBytecodeBundle([]string{"fs", "net"}, data))
+					if err != nil || len(caps) != 2 || !bytes.Equal(pgc, data) {
+						t.Fatalf("bundle round trip: %v %v", caps, err)
+					}
+					if prog, compiled, _, err = interp.DecodePgc(pgc); err != nil {
+						t.Fatal(err)
+					}
+				}
 				var out bytes.Buffer
-				in := interp.New(prog, interp.Options{Stdout: &out, Stderr: &out, Allow: parseAllow("all"), Engine: engine})
+				in := interp.New(prog, interp.Options{Stdout: &out, Stderr: &out, Allow: parseAllow("all"), Engine: engine, Compiled: compiled})
 				for _, tr := range in.RunTests(nil, "") {
 					if !tr.Passed {
 						t.Errorf("%s: test %q failed: %s", engine, tr.Name, tr.Failure.Describe())
@@ -47,7 +66,7 @@ func TestExamples(t *testing.T) {
 					continue
 				}
 				var stdout bytes.Buffer
-				in = interp.New(prog, interp.Options{Stdout: &stdout, MaxSteps: 50_000_000, Engine: engine})
+				in = interp.New(prog, interp.Options{Stdout: &stdout, MaxSteps: 50_000_000, Engine: engine, Compiled: compiled})
 				res := in.Run()
 				if res.Status != "ok" || stdout.String() != want {
 					t.Fatalf("%s: run: %s\n got: %q\nwant: %q", engine, res.Describe(), stdout.String(), want)
