@@ -336,7 +336,9 @@ must be covered by unguarded arms, or there must be a final catch-all
 | `check --json` | `{ok, diagnostics[{code, severity, message, file, line, col, hint, fix?}]}` |
 | `fix [--all]` | applies `fix` edits (`safe` ones by default) and re-checks |
 | `run [--json]` | program output on stdout; with `--json` a final line on stderr `{exit_code, status, panic?, error?, steps}` |
-| `run/test --engine tree\|vm` | selects the execution engine (§16); results are identical |
+| `run/test --engine vm\|tree` | selects the execution engine (§16, default `vm`); results are identical |
+| `compile [-o app.pgc]` | checks and compiles to a `.pgc` bytecode file; `run`/`test` accept it (§16) |
+| `disasm [--json] [--fn name]` | the bytecode of a `.pg` or `.pgc` file |
 | `test --json` | `{ok, passed, failed, tests[{name, file, line, passed, ms, failure?}]}` |
 | `explain CODE` | description with wrong/right examples |
 | `guide` | compact reference + stdlib signatures (~2.6k tokens) |
@@ -344,10 +346,10 @@ must be covered by unguarded arms, or there must be a final catch-all
 | `edit --replace KEY` | replaces a whole declaration (`fn:x`, `struct:X`, `impl:X`, `test:name`, `let:X`, `import:path`, `extern:name`); `--expect-hash` guards against stale edits |
 | `extern python MODULE [NAME...]` | draft `extern` block generated from the real Python signatures and type hints |
 | `fmt` | the canonical text form |
-| `build` | self-contained executable (runtime + bundle); `--runtime` selects a binary for another OS/arch |
+| `build` | self-contained executable (runtime + bytecode); `--runtime` selects a binary for another OS/arch, `--source` embeds the source instead |
 
-Exit codes: 0 ok · 1 unhandled failure · 2 panic · 3 compile errors · 4
-capability denied.
+Exit codes: 0 ok · 1 unhandled failure · 2 panic · 3 compile errors
+(including an invalid `.pgc` file, `E0910`) · 4 capability denied.
 
 Diagnostic code ranges:
 
@@ -464,9 +466,14 @@ extern python "module.path" [as name] {
 
 Pygo has two engines with identical observable behavior:
 
-- `tree` (the default in v0.1): walks the syntax tree;
-- `vm`: a bytecode virtual machine, selected with `--engine vm` on
+- `vm` (the default since v0.2): Pygo's bytecode virtual machine;
+- `tree`: walks the syntax tree, selected with `--engine tree` on
   `run` and `test`.
+
+Programs can be compiled ahead of time to a `.pgc` bytecode file
+(`pygo compile`). `pygo run` and `pygo test` accept `.pgc` files, and
+`pygo disasm` shows the bytecode. `docs/BYTECODE.md` describes the
+machine, the instruction set and the file format.
 
 The VM compiles each function into a flat instruction list for a stack
 machine:
@@ -484,9 +491,10 @@ The guarantees:
   and trace), same failure;
 - same number of steps, so `--max-steps` stops both at the same statement.
 
-The test suite runs every program on both engines and compares all of
-this. A function the compiler cannot handle stays on the interpreter;
-the tests require that no such function exists.
+The test suite runs every program three ways and compares all of this:
+on the interpreter, on the VM, and on the VM from a `.pgc` round trip. A
+function the compiler cannot handle stays on the interpreter; the tests
+require that no such function exists.
 
 Measured on the programs in `bench/` (`go test -bench . ./internal/interp/`):
 
@@ -501,10 +509,9 @@ The VM helps most with code written in Pygo: loops, arithmetic and
 calls. It helps least with work done by the stdlib, which both engines
 share.
 
-## 17. Roadmap (not in v0.1)
+## 17. Roadmap
 
-- a versioned bytecode file format (`.pgc`) and the VM as default engine;
-- a WebAssembly backend;
+- a WebAssembly backend (from the bytecode);
 - traits/interfaces;
 - `select` on multiple channels;
 - effect polymorphism for higher-order functions;

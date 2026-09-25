@@ -590,23 +590,34 @@ func cmdBuild(args []string) int {
 	out := fs.String("o", "", "output executable")
 	allowS := fs.String("allow", "", "capabilities granted to the built program")
 	runtimePath := fs.String("runtime", "", "pygo binary to embed (default: this one); use a dist/ binary to cross-build")
+	source := fs.Bool("source", false, "embed the source instead of bytecode (for runtimes older than v0.2)")
 	fs.Parse(args)
 	if fs.NArg() != 1 || *out == "" {
-		return fail2("usage: pygo build [--allow caps] [--runtime pygo-binary] -o app file.pg")
-	}
-	prog, ds, ok := load(fs.Arg(0), false, false)
-	if !ok {
-		_ = ds
-		return interp.ExitCompile
+		return fail2("usage: pygo build [--allow caps] [--runtime pygo-binary] [--source] -o app file.pg")
 	}
 	var allow []string
 	for c := range parseAllow(*allowS) {
 		allow = append(allow, c)
 	}
-	payload, err := loader.MakeBundle(prog, allow)
-	if err != nil {
-		return fail2("%v", err)
+	sort.Strings(allow)
+	var payload []byte
+	if *source {
+		prog, _, ok := load(fs.Arg(0), false, false)
+		if !ok {
+			return interp.ExitCompile
+		}
+		var err error
+		if payload, err = loader.MakeBundle(prog, allow); err != nil {
+			return fail2("%v", err)
+		}
+	} else {
+		pgc, _, ok := compileToPgc(fs.Arg(0), false)
+		if !ok {
+			return interp.ExitCompile
+		}
+		payload = makeBytecodeBundle(allow, pgc)
 	}
+	var err error
 	rt := *runtimePath
 	if rt == "" {
 		if rt, err = os.Executable(); err != nil {
@@ -635,6 +646,48 @@ func cmdBuild(args []string) int {
 	return 0
 }
 
+// A bytecode bundle is: magic, uvarint count, the granted capabilities
+// (uvarint length + bytes each), then the .pgc file.
+const bytecodeBundleMagic = "PYGOBC\x00\x01"
+
+func makeBytecodeBundle(allow []string, pgc []byte) []byte {
+	var b bytes.Buffer
+	b.WriteString(bytecodeBundleMagic)
+	b.Write(binary.AppendUvarint(nil, uint64(len(allow))))
+	for _, c := range allow {
+		b.Write(binary.AppendUvarint(nil, uint64(len(c))))
+		b.WriteString(c)
+	}
+	b.Write(pgc)
+	return b.Bytes()
+}
+
+func readBytecodeBundle(p []byte) ([]string, []byte, error) {
+	p = p[len(bytecodeBundleMagic):]
+	next := func() (uint64, error) {
+		x, n := binary.Uvarint(p)
+		if n <= 0 {
+			return 0, fmt.Errorf("corrupted bundle header")
+		}
+		p = p[n:]
+		return x, nil
+	}
+	count, err := next()
+	if err != nil {
+		return nil, nil, err
+	}
+	var caps []string
+	for i := uint64(0); i < count; i++ {
+		n, err := next()
+		if err != nil || n > uint64(len(p)) {
+			return nil, nil, fmt.Errorf("corrupted bundle header")
+		}
+		caps = append(caps, string(p[:n]))
+		p = p[n:]
+	}
+	return caps, p, nil
+}
+
 // runBundle runs the program embedded in this executable, if any.
 func runBundle() (int, bool) {
 	exe, err := os.Executable()
@@ -659,23 +712,39 @@ func runBundle() (int, bool) {
 	if _, err := f.ReadAt(payload, st.Size()-16-n); err != nil {
 		return 2, true
 	}
-	var b loader.Bundle
-	if err := json.Unmarshal(payload, &b); err != nil {
-		fmt.Fprintln(os.Stderr, "corrupted bundle:", err)
-		return 2, true
-	}
-	prog, ds := loader.FromBundle(&b)
-	if diag.HasErrors(ds) {
-		for _, d := range ds {
-			fmt.Fprintln(os.Stderr, d.String())
+	var prog *loader.Program
+	var compiled *interp.Compiled
+	var caps []string
+	if bytes.HasPrefix(payload, []byte(bytecodeBundleMagic)) {
+		var pgc []byte
+		if caps, pgc, err = readBytecodeBundle(payload); err == nil {
+			prog, compiled, _, err = interp.DecodePgc(pgc)
 		}
-		return interp.ExitCompile, true
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "embedded bytecode:", err)
+			return interp.ExitCompile, true
+		}
+	} else {
+		var b loader.Bundle
+		if err := json.Unmarshal(payload, &b); err != nil {
+			fmt.Fprintln(os.Stderr, "corrupted bundle:", err)
+			return 2, true
+		}
+		var ds []diag.Diagnostic
+		prog, ds = loader.FromBundle(&b)
+		if diag.HasErrors(ds) {
+			for _, d := range ds {
+				fmt.Fprintln(os.Stderr, d.String())
+			}
+			return interp.ExitCompile, true
+		}
+		caps = b.Allow
 	}
 	allow := map[string]bool{}
-	for _, c := range b.Allow {
+	for _, c := range caps {
 		allow[c] = true
 	}
-	in := interp.New(prog, interp.Options{Allow: allow, Args: os.Args[1:]})
+	in := interp.New(prog, interp.Options{Allow: allow, Args: os.Args[1:], Compiled: compiled})
 	res := in.Run()
 	if res.Status == "panic" || res.Status == "failure" {
 		fmt.Fprintln(os.Stderr, res.Describe())

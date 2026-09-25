@@ -74,7 +74,9 @@ func compileFunc(name string, hasSelf bool, params []*ast.Param, body *ast.Block
 	c := newFnComp(name, nil, body, exprBody)
 	c.params(hasSelf, params)
 	c.body(body, exprBody)
-	return c.finish(), nil
+	p = c.finish()
+	p.prepare()
+	return p, nil
 }
 
 func newFnComp(name string, parent *fnComp, body *ast.Block, exprBody ast.Expr) *fnComp {
@@ -112,7 +114,7 @@ func capturedNames(n ast.Node, out map[string]bool) {
 }
 
 func (c *fnComp) finish() *Proto {
-	c.p.globals = make([]globalCache, c.nglob)
+	c.p.NumGlobals = c.nglob
 	return c.p
 }
 
@@ -188,10 +190,11 @@ func (c *fnComp) konst(v Value) int {
 	return len(c.p.Consts) - 1
 }
 
-func (c *fnComp) newSlot(boxed bool) int {
+func (c *fnComp) newSlot(name string, boxed bool) int {
 	s := c.p.NumSlots
 	c.p.NumSlots++
 	c.p.Boxed = append(c.p.Boxed, boxed)
+	c.p.SlotNames = append(c.p.SlotNames, name)
 	return s
 }
 
@@ -201,7 +204,7 @@ func (c *fnComp) pushScope() { c.scopes = append(c.scopes, map[string]*vmLocal{}
 func (c *fnComp) popScope()  { c.scopes = c.scopes[:len(c.scopes)-1] }
 
 func (c *fnComp) declare(name string, mutable bool) *vmLocal {
-	lv := &vmLocal{slot: c.newSlot(c.boxed[name]), boxed: c.boxed[name], mutable: mutable}
+	lv := &vmLocal{slot: c.newSlot(name, c.boxed[name]), boxed: c.boxed[name], mutable: mutable}
 	c.scopes[len(c.scopes)-1][name] = lv
 	return lv
 }
@@ -233,9 +236,9 @@ func (c *fnComp) resolve(name string) vmRef {
 		if !r.boxed {
 			c.fail(c.pos, "captured variable '%s' is not boxed", name)
 		}
-		c.p.Upvals = append(c.p.Upvals, upvalDesc{fromLocal: true, index: r.idx})
+		c.p.Upvals = append(c.p.Upvals, upvalDesc{FromLocal: true, Index: r.idx})
 	case 1:
-		c.p.Upvals = append(c.p.Upvals, upvalDesc{fromLocal: false, index: r.idx})
+		c.p.Upvals = append(c.p.Upvals, upvalDesc{FromLocal: false, Index: r.idx})
 	default:
 		return r
 	}
@@ -553,7 +556,7 @@ func (c *fnComp) assert(s *ast.Assert) {
 		for _, name := range names {
 			c.loadRef(c.resolve(name), name, true)
 		}
-		c.emit(OpAssertCollect, c.aux(&assertInfo{s: s, names: names}), len(names), 0)
+		c.emit(OpAssertCollect, c.aux(&assertInfo{S: s, Names: names}), len(names), 0)
 	}
 	hasMsg := 0
 	if s.Msg != nil {
@@ -675,7 +678,7 @@ func (c *fnComp) strLit(e *ast.StrLit) {
 func (c *fnComp) structLit(e *ast.StructLit) {
 	c.expr(e.Type)
 	a := c.aux(e)
-	tmp := c.newSlot(false)
+	tmp := c.newSlot("$struct", false)
 	c.at(e.Pos)
 	c.emit(OpStructType, a, tmp, 0)
 	for k, f := range e.Fields {
@@ -765,17 +768,22 @@ func (c *fnComp) ifExpr(e *ast.If) {
 
 func (c *fnComp) match(e *ast.Match) {
 	c.expr(e.Subject)
-	subj := c.newSlot(false)
+	subj := c.newSlot("$match", false)
 	c.emit(OpStoreLocal, subj, 0, 0)
 	d := c.depth
 	var ends []int
 	for _, arm := range e.Arms {
 		for _, pat := range arm.Patterns {
 			c.pushScope()
-			mi := &matchInfo{pat: pat, slots: map[string]int{}, boxed: map[string]bool{}}
+			mi := &matchInfo{Pat: pat}
 			for _, name := range patternNames(pat) {
+				if c.scopes[len(c.scopes)-1][name] != nil {
+					continue // the same name twice in one pattern
+				}
 				lv := c.declare(name, false)
-				mi.slots[name], mi.boxed[name] = lv.slot, lv.boxed
+				mi.Names = append(mi.Names, name)
+				mi.Slots = append(mi.Slots, lv.slot)
+				mi.Boxed = append(mi.Boxed, lv.boxed)
 			}
 			c.at(pat.P())
 			c.emit(OpMatchPat, c.aux(mi), subj, 0)

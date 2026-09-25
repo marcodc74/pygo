@@ -149,7 +149,9 @@ In alternativa puoi compilare dai sorgenti (serve Go >= 1.22):
 ./pygo run examples/hello.pg
 ./pygo run --allow fs,net app.pg -- arg1 arg2
 ./pygo run -e 'print([1, 2, 3].map(fn(x) => x * x).sum())'
-./pygo run --engine vm app.pg        # macchina virtuale a bytecode (3x+ su cicli e chiamate)
+./pygo compile -o app.pgc app.pg     # compila in bytecode (.pgc)
+./pygo run app.pgc                   # esegue il bytecode senza ricompilare
+./pygo disasm --fn main app.pg       # mostra il bytecode di una funzione
 ./pygo check --json app.pg           # diagnostica per agenti
 ./pygo test examples/                # esegue i blocchi test "..." {}
 ```
@@ -167,7 +169,9 @@ Comandi pensati per un agente (tutti con output JSON):
 | `pygo edit file.pg --replace fn:nome` | Sostituisce, inserisce o cancella una dichiarazione intera (niente diff per riga); `--expect-hash` rifiuta la modifica se nel frattempo il simbolo è cambiato |
 | `pygo fmt [-w]` | Forma canonica unica |
 | `pygo ast file.pg` | AST in JSON |
-| `pygo build -o app file.pg` | Eseguibile autonomo (runtime + sorgente); con `--runtime` si può usare un binario compilato per un altro OS |
+| `pygo build -o app file.pg` | Eseguibile autonomo (runtime + bytecode); con `--runtime` si può usare un binario compilato per un altro OS |
+| `pygo compile -o app.pgc file.pg` | Controlla e compila in bytecode; `pygo run app.pgc` lo esegue senza ricompilare |
+| `pygo disasm [--json] [--fn nome]` | Mostra il bytecode di un `.pg` o `.pgc`, con posizione nel sorgente di ogni istruzione |
 | `pygo extern python MODULE` | Genera le dichiarazioni `extern` di una libreria Python dalle sue firme reali |
 
 Exit code stabili: `0` ok, `1` failure non gestita in `main`, `2` panic,
@@ -290,6 +294,7 @@ python integrations/agent.py --provider claude "scrivi un programma Pygo che ...
 
 - [`docs/LLM.md`](docs/LLM.md): come usare Pygo con i vari LLM, dalle chat alle CLI alle API.
 - [`docs/SPEC.md`](docs/SPEC.md): specifica completa del linguaggio.
+- [`docs/BYTECODE.md`](docs/BYTECODE.md): la macchina virtuale, le istruzioni e il formato `.pgc`.
 - [`docs/GUIDE.md`](docs/GUIDE.md): guida compatta da mettere nel contesto di un modello (`pygo guide`).
 - `pygo explain` spiega tutti i codici diagnostici (E/W) e runtime (R).
 
@@ -305,8 +310,9 @@ internal/ast        AST, visitor, export JSON
 internal/sig        firme della stdlib (file .pg incorporati nel binario)
 internal/check      checker statico: nomi, tipi, fallibilità, effetti, nil, esaustività, correzioni
 internal/interp     runtime: valori thread-safe, stdlib, goroutine per spawn/chan;
-                    due motori, l'interprete ad albero e la VM a bytecode
-                    (vm_compile.go compila, vm.go esegue)
+                    la VM a bytecode (vm_compile.go compila, vm.go esegue,
+                    pgc.go è il formato .pgc, disasm.go il disassemblatore)
+                    e l'interprete ad albero
 bench/              programmi di benchmark per confrontare i motori
 integrations/       AGENTS.md, skill per Claude Code, tool per le API degli LLM (pygo_tools.py, agent.py)
 internal/printer    stampa canonica dell'AST (pygo fmt)
@@ -328,9 +334,12 @@ v0.1.
 - **Distribuzione:** cross-compilazione per 6 piattaforme.
 - **Docker:** immagini costruite e provate (l'app risponde, lo shutdown è pulito, la sandbox blocca cicli infiniti e permessi mancanti).
 - **Kubernetes:** i manifest sono sintatticamente validi, ma non li ho applicati a un cluster reale.
-- **VM a bytecode** (`--engine vm`): compilatore e macchina virtuale propri di Pygo,
-  da 1,2 a 3,5 volte più veloce dell'interprete (vedi SPEC §16). Ogni programma di test
-  gira su entrambi i motori, che devono dare output, errori, trace e numero di passi identici.
+- **VM a bytecode**, motore predefinito. Compilatore e macchina virtuale propri di Pygo,
+  da 1,2 a 3,5 volte più veloce dell'interprete ad albero (`--engine tree`). Si può compilare in
+  un file `.pgc` (`pygo compile`) che `run` e `test` eseguono direttamente, e che `pygo build` include
+  negli eseguibili. Ogni programma di test gira in tre modi (interprete, VM, VM da `.pgc`), che
+  devono dare output, errori, trace e numero di passi identici. Dettagli in
+  [`docs/BYTECODE.md`](docs/BYTECODE.md).
 - **Integrazione con gli LLM** ([`docs/LLM.md`](docs/LLM.md)):
   - `AGENTS.md` e una skill per Claude Code;
   - tool e agente per le API di Claude, OpenAI, Gemini e modelli locali. Li ho provati con gli SDK reali e risposte simulate, non contro le API vere.
@@ -338,7 +347,6 @@ v0.1.
 - **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
 **Roadmap:**
-- formato bytecode `.pgc`, `pygo compile`/`disasm` e VM come motore predefinito (in corso);
 - firma digitale dei binari Windows (Authenticode);
 - backend WebAssembly;
 - trait e interfacce;

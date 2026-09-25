@@ -81,6 +81,13 @@ func Expr(e ast.Expr) string {
 	return p.b.String()
 }
 
+// Pattern renders a match pattern.
+func Pattern(pt ast.Pattern) string {
+	p := &pr{}
+	p.pattern(pt)
+	return p.b.String()
+}
+
 // Type renders a type annotation.
 func Type(t *ast.TypeExpr) string {
 	if t == nil {
