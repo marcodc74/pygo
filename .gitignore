@@ -1,3 +1,5 @@
 /pygo
 /dist/
 *.exe
+itest/
+__pycache__/
