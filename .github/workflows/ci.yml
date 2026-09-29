@@ -82,7 +82,8 @@ jobs:
           PYGO_TEST_PG_DSN: postgres://pygo:secret@localhost:5432/pygo?sslmode=disable
 
   dist:
-    needs: test    runs-on: ubuntu-latest
+    needs: test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
