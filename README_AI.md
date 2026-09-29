@@ -155,6 +155,7 @@ fn main() -> ! uses net {
 - 405 when only the method differs, 404 otherwise; same path wins in order.
 - Bodies over `max_body` (default 1 MiB) get 413 before the handler runs.
 - Test a handler directly with an `http.Request{...}` literal — no socket needed.
+- Observability: add `http.metrics()` to the middleware and serve `http.metrics_text()` at `/metrics`; `/healthz` and `/readyz` are plain routes. `http.tracing("service", endpoint: "http://host:4318")` exports OTLP/HTTP spans (`uses net`).
 
 ## Determinism and budgets
 

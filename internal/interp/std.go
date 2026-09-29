@@ -169,6 +169,15 @@ func init() {
 		"timeout": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.mwTimeout(a[0].(int64))
 		},
+		"metrics": func(th *Thread, _ Value, _ []Value) (Value, error) {
+			return th.mwMetrics(), nil
+		},
+		"metrics_text": func(th *Thread, _ Value, _ []Value) (Value, error) {
+			return th.in.metricsText(), nil
+		},
+		"tracing": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.mwTracing(a[0].(string), a[1].(string))
+		},
 		"static": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.httpStatic(a[0].(*Struct), a[1].(string))
 		},

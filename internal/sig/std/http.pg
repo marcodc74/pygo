@@ -32,6 +32,13 @@ fn log_requests() -> Middleware {}
 fn request_id() -> Middleware {}
 /// Middleware that answers 503 if the handler runs longer than ms milliseconds.
 fn timeout(ms: Int) -> Middleware {}
+/// Middleware that records request counters, latency and in-flight gauge.
+fn metrics() -> Middleware {}
+/// Prometheus text exposition of the metrics recorded so far (serve it at /metrics).
+fn metrics_text() -> Str {}
+/// Middleware that exports one OTLP/HTTP span per request to endpoint (a base URL,
+/// or a full .../v1/traces URL). Trace and span ids are reproducible under --seed.
+fn tracing(service: Str, endpoint: Str) -> Middleware uses net {}
 /// Serves the file req.params["path"] (route "/static/{path...}") from dir, with its content type.
 /// Hidden files (.env), ".." and symlinks leading outside dir give 404.
 fn static(req: Request, dir: Str) -> Response uses fs {}

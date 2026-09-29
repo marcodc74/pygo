@@ -40,7 +40,7 @@ Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees
 - **M4 — AI in the loop:** AI-1, AI-2.
 - **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
 - **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
-- **M7 — Production services:** SRV-1..SRV-8 (SRV-1 and SRV-2 shipped; SRV-3 is next).
+- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-3 shipped; SRV-4 is next).
 
 Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M7 makes the result
 deployable; M5 deepens the moat.
@@ -254,7 +254,8 @@ Goal: a generated service can face real traffic with the boring guarantees
 untyped Python. Breadth is delegated through typed interop; the language keeps
 the safety guarantees.
 
-SRV-1 and SRV-2 are **shipped**; SRV-3 is next and the rest are queued. Definition
+SRV-1, SRV-2 and SRV-3 are **shipped**; SRV-4 is next and the rest are queued.
+Definition
 of done for an open item: signatures in `internal/sig/std/`, a Go
 implementation, entries in `pygo guide` / `pygo explain` where relevant, tests
 on all three engines, and a worked example under `examples/`.
@@ -305,11 +306,19 @@ on all three engines, and a worked example under `examples/`.
   declaration and capability denial, plus `examples/crypto.pg`.
 - **Effort:** L. **Deps:** none.
 
-### SRV-3 · Observability
+### SRV-3 · Observability  `done`
 - `/metrics` in Prometheus text format and minimal OpenTelemetry spans;
   readiness/liveness endpoints (the example already has `/healthz`).
 - **Acceptance:** counters for requests, latency histogram, in-flight gauge;
   spans exported through an OTLP endpoint configured by capability. (M)
+- **Shipped:** the `http.metrics()` middleware and `http.metrics_text()`
+  (Prometheus counters by method+status, a cumulative latency histogram, and
+  in-flight/peak gauges); `http.tracing(service, endpoint)` exports one
+  OTLP/HTTP JSON span per request (`uses net`, ids reproducible under `--seed`);
+  `/healthz` and `/readyz` are plain routes. Tests: exposition format and bucket
+  math, cross-engine dispatch, the OTLP payload against an `httptest` server,
+  and effect enforcement; `examples/observability.pg`.
+- **Effort:** M. **Deps:** none.
 
 ### SRV-4 · `extern sql`
 - Typed queries and migrations without `python`: schema-checked parameters and

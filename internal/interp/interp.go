@@ -61,6 +61,9 @@ type Interp struct {
 	stdinMu  sync.Mutex
 	rngMu    sync.Mutex
 	rng      *rand.Rand
+	traceMu  sync.Mutex
+	traceRng *rand.Rand // OTLP trace/span ids, kept apart so rand.* stays stable
+	metrics  *httpMetrics
 	modMu    sync.Mutex
 	modules  map[string]*Module
 	std      map[string]*Module
@@ -128,16 +131,18 @@ func New(prog *loader.Program, opt Options) *Interp {
 		opt.Allow = map[string]bool{}
 	}
 	in := &Interp{
-		opt:     opt,
-		prog:    prog,
-		out:     &syncWriter{w: bufio.NewWriter(opt.Stdout)},
-		errw:    &syncWriter{w: bufio.NewWriter(opt.Stderr)},
-		stdin:   bufio.NewReader(opt.Stdin),
-		rng:     rand.New(rand.NewSource(opt.Seed)),
-		modules: map[string]*Module{},
-		std:     map[string]*Module{},
-		stop:    make(chan struct{}),
-		done:    make(chan struct{}),
+		opt:      opt,
+		prog:     prog,
+		out:      &syncWriter{w: bufio.NewWriter(opt.Stdout)},
+		errw:     &syncWriter{w: bufio.NewWriter(opt.Stderr)},
+		stdin:    bufio.NewReader(opt.Stdin),
+		rng:      rand.New(rand.NewSource(opt.Seed)),
+		traceRng: rand.New(rand.NewSource(opt.Seed)),
+		metrics:  newHTTPMetrics(),
+		modules:  map[string]*Module{},
+		std:      map[string]*Module{},
+		stop:     make(chan struct{}),
+		done:     make(chan struct{}),
 	}
 	if opt.Timeout > 0 {
 		in.deadline = time.Now().Add(opt.Timeout)

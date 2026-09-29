@@ -416,7 +416,7 @@ the checker, the runtime, `describe` and `guide`.
 | `json` | `encode`, `decode`, `decode_as(text, schema: T)` (typed validation) |
 | `fs` | `read`, `write`, `append`, `exists`, `list`, `remove`, `mkdir` (`uses fs`) |
 | `os` | `args`, `env` (`uses env`), `exit`, `platform`, `cwd` |
-| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM and a body limit; `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
+| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM and a body limit; `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`, `metrics`, `tracing`), `metrics_text` (Prometheus exposition), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
 | `html` | `raw(text)`: trusted markup without escaping (§14.2) |
 | `time` | `now`, `now_ms`, `iso` (`uses clock`), `sleep` |
 | `log` | `debug`, `info`, `warn`, `error`: JSON lines on stderr |
