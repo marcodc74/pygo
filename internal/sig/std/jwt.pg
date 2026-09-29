@@ -1,0 +1,6 @@
+/// Verify an HS256 JWT and return its claims. Fails on a bad format, a
+/// non-HS256 alg, or a signature mismatch. It is pure: exp/nbf are NOT
+/// checked, compare them with time.now_ms() yourself.
+fn verify_hs256(token: Str, key: Str) -> !Map[Str, Any] {}
+/// Sign claims as an HS256 JWT; the header is {"alg":"HS256","typ":"JWT"}.
+fn sign_hs256(claims: Map[Str, Any], key: Str) -> !Str {}

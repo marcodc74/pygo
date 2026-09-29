@@ -53,7 +53,7 @@ usage:
   pygo extern   python MODULE [NAME ...]        draft extern block from Python signatures
   pygo version
 
-capabilities (--allow): ` + "clock,env,fs,net,proc,python,rand or all" + `
+capabilities (--allow): ` + "clock,crypto,env,fs,net,proc,python,rand or all" + `
 Python for extern blocks: --python PATH, or PYGO_PYTHON (default python3)
 exit codes: 0 ok, 1 failure, 2 panic, 3 compile error, 4 capability denied
 `
@@ -212,7 +212,7 @@ func validEngine(e string) bool {
 
 func cmdRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	allowS := fs.String("allow", "", "granted capabilities, comma separated (clock,env,fs,net,proc,rand|all)")
+	allowS := fs.String("allow", "", "granted capabilities, comma separated (clock,crypto,env,fs,net,proc,rand|all)")
 	maxSteps := fs.Int64("max-steps", 0, "abort after N steps (0 = unlimited)")
 	timeout := fs.Duration("timeout", 0, "abort after this duration (0 = unlimited)")
 	seed := fs.Int64("seed", 0, "seed of the rand module")

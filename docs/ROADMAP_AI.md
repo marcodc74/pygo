@@ -40,7 +40,7 @@ Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees
 - **M4 — AI in the loop:** AI-1, AI-2.
 - **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
 - **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
-- **M7 — Production services:** SRV-1..SRV-8 (SRV-1 shipped; SRV-2 is next).
+- **M7 — Production services:** SRV-1..SRV-8 (SRV-1 and SRV-2 shipped; SRV-3 is next).
 
 Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M7 makes the result
 deployable; M5 deepens the moat.
@@ -254,7 +254,7 @@ Goal: a generated service can face real traffic with the boring guarantees
 untyped Python. Breadth is delegated through typed interop; the language keeps
 the safety guarantees.
 
-SRV-1 is **shipped**; SRV-2 is open (next) and the rest are queued. Definition
+SRV-1 and SRV-2 are **shipped**; SRV-3 is next and the rest are queued. Definition
 of done for an open item: signatures in `internal/sig/std/`, a Go
 implementation, entries in `pygo guide` / `pygo explain` where relevant, tests
 on all three engines, and a worked example under `examples/`.
@@ -277,7 +277,7 @@ on all three engines, and a worked example under `examples/`.
   recover, access log, timeout, bad value) and `examples/middleware.pg`.
 - **Effort:** M. **Deps:** none.
 
-### SRV-2 · `crypto` + `jwt`  `next`
+### SRV-2 · `crypto` + `jwt`  `done`
 - **Problem:** authentication is the first real service need, and today it means
   `--allow python`, which grants file and network access too.
 - **Design (standard library only, no new module dependency):**
@@ -296,6 +296,13 @@ on all three engines, and a worked example under `examples/`.
 - **Acceptance:** RFC test vectors pass for SHA-256, HMAC-SHA256 and PBKDF2;
   `equal` is constant-time; a tampered JWT fails with a handled error;
   `uses crypto` is enforced and unknown capabilities are rejected by `check`.
+- **Shipped:** `crypto.{sha256, hmac_sha256, equal, pbkdf2, random_bytes}` and
+  `jwt.{sign_hs256, verify_hs256}`; `crypto` added to the closed capability set.
+  Hashing, HMAC, PBKDF2 and JWT are pure; only `random_bytes` is an effect and
+  it draws from the seeded generator, so replays and every engine agree.
+  `verify_hs256` returns the claims map and leaves `exp`/`nbf` to the caller.
+  Tests: SHA-256/HMAC-SHA256/PBKDF2 vectors, tampered-JWT failure, effect
+  declaration and capability denial, plus `examples/crypto.pg`.
 - **Effort:** L. **Deps:** none.
 
 ### SRV-3 · Observability
