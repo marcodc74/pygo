@@ -278,6 +278,11 @@ There are two kinds of error.
   and a JSON-serializable report containing the code (R00xx), the
   position, a hint, the values of the variables involved and the stack
   trace.
+- **Limits.** `--max-steps` (R0011) and `--timeout` (R0012) abort with a
+  panic. Very deep recursion trips a call-depth limit (R0018) instead of
+  overflowing the host stack, so a program can never crash the runtime.
+  A channel or task await is bounded by `--timeout`; with no `--timeout`
+  it waits indefinitely.
 
 ## 8. Effects (capabilities)
 
@@ -369,6 +374,10 @@ must be covered by unguarded arms, or there must be a final catch-all
 Exit codes: 0 ok · 1 unhandled failure · 2 panic · 3 compile errors
 (including an invalid `.pgc` file, `E0910`) · 4 capability denied.
 
+Every command accepts `--json`; `describe` and `outline` always print JSON,
+so `--json` is a no-op for them. `fix --dry-run --json` prints the fixed
+source to stderr and the JSON summary to stdout.
+
 Diagnostic code ranges:
 
 | Range | Area |
@@ -403,7 +412,7 @@ the checker, the runtime, `describe` and `guide`.
 | `json` | `encode`, `decode`, `decode_as(text, schema: T)` (typed validation) |
 | `fs` | `read`, `write`, `append`, `exists`, `list`, `remove`, `mkdir` (`uses fs`) |
 | `os` | `args`, `env` (`uses env`), `exit`, `platform`, `cwd` |
-| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM and a body limit; `dispatch` (routes with path parameters), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
+| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM and a body limit; `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
 | `html` | `raw(text)`: trusted markup without escaping (§14.2) |
 | `time` | `now`, `now_ms`, `iso` (`uses clock`), `sleep` |
 | `log` | `debug`, `info`, `warn`, `error`: JSON lines on stderr |
@@ -529,6 +538,16 @@ Routes are tried in order, like `match` arms, so a literal route placed
 before `/items/{id}` (for example `/items/new`) takes precedence. An
 invalid method or path is a panic (R0015) the first time `dispatch` sees
 it, so tests that exercise the routes catch it.
+
+**Middleware.** `http.dispatch(req, routes: [...], middleware: [...])` wraps
+the outcome, including `404`/`405`. Each `http.Middleware{name, apply}` takes
+the next handler and returns the handler to run; the list runs left-to-right
+(the first is outermost) and a middleware may short-circuit without calling
+`next`. Built-ins: `http.request_id()` (reuses or generates `x-request-id`,
+echoed on the response), `http.log_requests()` (one JSON access line on
+stderr), `http.recover()` (a handler panic becomes `500`) and
+`http.timeout(ms)` (a handler over the deadline becomes `503`, R0019; the
+deadline is checked at step boundaries, so a blocking call is not interrupted).
 
 **Static files.** `http.static(req, dir: "public")` (`uses fs`) serves the
 file named by `req.params["path"]`, so its route ends with `{path...}`.

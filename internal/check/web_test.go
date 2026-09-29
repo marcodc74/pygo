@@ -36,6 +36,35 @@ fn assets(req: http.Request) -> http.Response => http.static(req, dir: "public")
 `, "E0501")
 }
 
+// Middleware is typed: dispatch takes a List[Middleware]. A struct literal with
+// an apply function is accepted; a list of plain handlers is a mismatch.
+func TestMiddlewareTypes(t *testing.T) {
+	expectCodes(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn pass() -> http.Middleware {
+    return http.Middleware{name: "pass", apply: fn(next) => fn(req) { return next(req) }}
+}
+
+fn main() {
+    let r = http.dispatch(http.Request{method: "GET", path: "/", query: {}, headers: {}, body: ""}, routes: [http.Route{method: "GET", path: "/", handler: h}], middleware: [pass()])
+    print(r.status)
+}
+`)
+	expectCodes(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() {
+    let r = http.dispatch(http.Request{method: "GET", path: "/", query: {}, headers: {}, body: ""}, routes: [], middleware: [h])
+    print(r.status)
+}
+`, "E0301")
+}
+
 // A named function used as a value brings its effects to the function
 // that takes it: routes() can hand assets to anyone who calls it.
 func TestFunctionValueEffects(t *testing.T) {

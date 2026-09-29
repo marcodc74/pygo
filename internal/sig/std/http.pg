@@ -9,6 +9,10 @@ struct Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cook
 /// A route for dispatch. method: GET (also answers HEAD), POST, PUT, PATCH, DELETE, HEAD or OPTIONS.
 /// path: literal segments, {name} (one segment) and a final {name...} (the rest of the path).
 struct Route { method: Str, path: Str, handler: fn(Request) -> Response }
+/// A middleware wraps a handler: apply(next) returns the handler to run instead.
+/// Pass a list to dispatch: they run left-to-right (the first is outermost) and may
+/// short-circuit by returning without calling next.
+struct Middleware { name: Str, apply: fn(fn(Request) -> Response) -> fn(Request) -> Response }
 
 fn get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 fn post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
@@ -18,7 +22,16 @@ fn request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, t
 fn serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net {}
 /// Calls the handler of the FIRST route whose method and path match, with req.params set.
 /// A path that matches only with another method gives 405 (header allow), no match 404.
-fn dispatch(req: Request, routes: List[Route]) -> Response {}
+/// middleware wraps the outcome (including 404/405).
+fn dispatch(req: Request, routes: List[Route], middleware: List[Middleware] = []) -> Response {}
+/// Middleware that turns a handler panic into a 500 response (one JSON line on stderr).
+fn recover() -> Middleware {}
+/// Middleware that logs one JSON access line per request to stderr.
+fn log_requests() -> Middleware {}
+/// Middleware that reads X-Request-Id (or generates one) and echoes it on the response.
+fn request_id() -> Middleware {}
+/// Middleware that answers 503 if the handler runs longer than ms milliseconds.
+fn timeout(ms: Int) -> Middleware {}
 /// Serves the file req.params["path"] (route "/static/{path...}") from dir, with its content type.
 /// Hidden files (.env), ".." and symlinks leading outside dir give 404.
 fn static(req: Request, dir: Str) -> Response uses fs {}

@@ -404,3 +404,18 @@ extern python "unused_mod" {
 		t.Fatalf("hints: %q / %q", ds[0].Hint, ds[1].Hint)
 	}
 }
+
+// A malformed interpolation format spec is a compile-time error (E0309), not a
+// runtime panic.
+func TestFormatSpecIsStatic(t *testing.T) {
+	expectCodes(t, `
+fn main() {
+    print("${42:q}")
+}
+`, "E0309")
+	expectCodes(t, `
+fn main() {
+    print("${42:>5} ${3.14:.2} ${255:x}")
+}
+`)
+}

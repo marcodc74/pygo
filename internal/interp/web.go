@@ -13,12 +13,20 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/marcodc74/pygo/internal/ast"
+)
+
+// mwApplyDecl / mwHandlerDecl describe the closures built by httpMiddleware.
+// Their parameters carry no type, so callBuiltin binds them without a runtime
+// type check.
+var (
+	mwApplyDecl   = &ast.FuncDecl{Name: "middleware", Params: []*ast.Param{{Name: "next"}}}
+	mwHandlerDecl = &ast.FuncDecl{Name: "handler", Params: []*ast.Param{{Name: "req"}}}
 )
 
 // field returns a struct field by name.
@@ -48,27 +56,7 @@ func (th *Thread) httpHandler(handler Value, maxBody int64) http.Handler {
 	httpMod := in.stdModule("http")
 	reqType := httpMod.Types["Request"].(*StructType)
 	respType := httpMod.Types["Response"].(*StructType)
-	logErr := func(msg string, extra map[string]string) {
-		var b bytes.Buffer
-		b.WriteString(`{"ts":`)
-		encodeJSON(&b, time.Now().UTC().Format(time.RFC3339Nano), 0, 0)
-		b.WriteString(`,"level":"error","msg":`)
-		encodeJSON(&b, msg, 0, 0)
-		keys := make([]string, 0, len(extra))
-		for k := range extra {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			b.WriteString(`,`)
-			encodeJSON(&b, k, 0, 0)
-			b.WriteString(`:`)
-			encodeJSON(&b, extra[k], 0, 0)
-		}
-		b.WriteString("}\n")
-		in.errw.WriteString(b.String())
-		in.errw.Flush()
-	}
+	logErr := func(msg string, extra map[string]string) { th.serverLog("error", msg, extra) }
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ContentLength > maxBody {
 			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
@@ -191,6 +179,165 @@ func toCookie(v Value) (*http.Cookie, error) {
 	return c, nil
 }
 
+// ---------- middleware ----------
+
+// serverLog writes one JSON line to stderr (server diagnostics and access logs).
+func (th *Thread) serverLog(level, msg string, extra map[string]string) {
+	var b bytes.Buffer
+	b.WriteString(`{"ts":`)
+	encodeJSON(&b, time.Now().UTC().Format(time.RFC3339Nano), 0, 0)
+	b.WriteString(`,"level":`)
+	encodeJSON(&b, level, 0, 0)
+	b.WriteString(`,"msg":`)
+	encodeJSON(&b, msg, 0, 0)
+	for _, k := range sortedKeys(extra) {
+		b.WriteString(`,`)
+		encodeJSON(&b, k, 0, 0)
+		b.WriteString(`:`)
+		encodeJSON(&b, extra[k], 0, 0)
+	}
+	b.WriteString("}\n")
+	th.in.errw.WriteString(b.String())
+	th.in.errw.Flush()
+}
+
+// httpMiddleware builds an http.Middleware whose apply is a builtin. run is
+// called with the next handler and the request, and returns the response.
+func (th *Thread) httpMiddleware(name string, run func(th *Thread, next Value, req *Struct) (Value, error)) *Struct {
+	httpMod := th.in.stdModule("http")
+	mwType := httpMod.Types["Middleware"].(*StructType)
+	apply := &Builtin{Name: "http." + name + ".apply", Mod: "http", TypeMod: httpMod, Decl: mwApplyDecl,
+		Fn: func(_ *Thread, _ Value, a []Value) (Value, error) {
+			next := a[0]
+			return &Builtin{Name: "http." + name, Mod: "http", TypeMod: httpMod, Decl: mwHandlerDecl,
+				Fn: func(th *Thread, _ Value, b []Value) (Value, error) {
+					return run(th, next, b[0].(*Struct))
+				}}, nil
+		}}
+	return &Struct{T: mwType, F: []Value{name, apply}}
+}
+
+// mwRecover turns a handler panic into a 500 response (a Failure still propagates).
+func (th *Thread) mwRecover() *Struct {
+	return th.httpMiddleware("recover", func(th *Thread, next Value, req *Struct) (Value, error) {
+		v, err := th.call(next, req)
+		if err != nil {
+			if p, ok := err.(*Panic); ok {
+				th.serverLog("error", "handler panic", map[string]string{"code": p.Code, "error": p.Message, "path": Str(field(req, "path"))})
+				return th.httpText(500, "internal server error"), nil
+			}
+			return nil, err
+		}
+		return v, nil
+	})
+}
+
+// mwLogRequests writes one JSON access line per request to stderr.
+func (th *Thread) mwLogRequests() *Struct {
+	return th.httpMiddleware("log_requests", func(th *Thread, next Value, req *Struct) (Value, error) {
+		start := time.Now()
+		v, err := th.call(next, req)
+		status := int64(500)
+		if err == nil {
+			if resp, ok := v.(*Struct); ok {
+				status, _ = field(resp, "status").(int64)
+			}
+		}
+		extra := map[string]string{
+			"method":      Str(field(req, "method")),
+			"path":        Str(field(req, "path")),
+			"status":      strconv.FormatInt(status, 10),
+			"duration_ms": strconv.FormatInt(time.Since(start).Milliseconds(), 10),
+		}
+		if hd, ok := field(req, "headers").(*Map); ok {
+			if id, ok := hd.Get("x-request-id"); ok {
+				extra["request_id"] = Str(id)
+			}
+		}
+		th.serverLog("info", "request", extra)
+		return v, err
+	})
+}
+
+// mwRequestID reads X-Request-Id (or generates one) and echoes it on the request
+// and the response.
+func (th *Thread) mwRequestID() *Struct {
+	return th.httpMiddleware("request_id", func(th *Thread, next Value, req *Struct) (Value, error) {
+		hd, _ := field(req, "headers").(*Map)
+		id := ""
+		if hd != nil {
+			if v, ok := hd.Get("x-request-id"); ok {
+				id = Str(v)
+			}
+		}
+		if id == "" {
+			id = "req-" + strconv.FormatInt(th.in.newReqID(), 10)
+		}
+		if hd != nil {
+			hd.Set("x-request-id", id)
+		}
+		v, err := th.call(next, req)
+		if err == nil {
+			if resp, ok := v.(*Struct); ok && resp.T == th.in.stdModule("http").Types["Response"] {
+				if hm, ok := field(resp, "headers").(*Map); ok {
+					hm.Set("x-request-id", id)
+				}
+			}
+		}
+		return v, err
+	})
+}
+
+// mwTimeout answers 503 when the handler exceeds ms. The deadline lives on the
+// thread and is checked at step boundaries (CPU work); blocking calls are not
+// interrupted.
+func (th *Thread) mwTimeout(ms int64) (Value, error) {
+	if ms <= 0 {
+		return nil, perr(PArgs, "pass a positive number of milliseconds", "http.timeout: ms must be > 0, got %d", ms)
+	}
+	return th.httpMiddleware("timeout", func(th *Thread, next Value, req *Struct) (Value, error) {
+		prev := th.deadline
+		th.deadline = time.Now().Add(time.Duration(ms) * time.Millisecond)
+		defer func() { th.deadline = prev }()
+		v, err := th.call(next, req)
+		if err != nil {
+			if p, ok := err.(*Panic); ok && p.Code == PReqTimeout {
+				return th.httpText(503, "request timed out"), nil
+			}
+			return nil, err
+		}
+		return v, nil
+	}), nil
+}
+
+// httpFixedHandler wraps a ready response as a handler, so middleware can wrap
+// 404/405 outcomes too.
+func (th *Thread) httpFixedHandler(resp *Struct) Value {
+	return &Builtin{Name: "http.response", Mod: "http", TypeMod: th.in.stdModule("http"), Decl: mwHandlerDecl,
+		Fn: func(_ *Thread, _ Value, _ []Value) (Value, error) { return resp, nil }}
+}
+
+// wrapMiddleware composes middleware around handler. The list runs left-to-right,
+// so the first middleware is the outermost.
+func (th *Thread) wrapMiddleware(mws *List, handler Value) (Value, error) {
+	mwType := th.in.stdModule("http").Types["Middleware"].(*StructType)
+	items := mws.Snapshot()
+	h := handler
+	for i := len(items) - 1; i >= 0; i-- {
+		mw, ok := items[i].(*Struct)
+		if !ok || mw.T != mwType {
+			return nil, perr(PArgs, `pass http.recover(), http.log_requests(), http.request_id(), http.timeout(ms) or http.Middleware{name: "x", apply: ...}`,
+				"http.dispatch: middleware must be http.Middleware values, got %s", TypeName(items[i]))
+		}
+		nh, err := th.call(field(mw, "apply"), h)
+		if err != nil {
+			return nil, err
+		}
+		h = nh
+	}
+	return h, nil
+}
+
 // ---------- routing ----------
 
 var routeMethods = map[string]bool{"GET": true, "HEAD": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true, "OPTIONS": true}
@@ -289,10 +436,12 @@ func (p *routePat) match(path string) (map[string]string, bool) {
 }
 
 // httpDispatch calls the handler of the first route matching the request
-// method and path; 405 when only the method differs, 404 otherwise.
-func (th *Thread) httpDispatch(req *Struct, routes *List) (Value, error) {
+// method and path; 405 when only the method differs, 404 otherwise. Any
+// middleware wraps the outcome, including 404/405.
+func (th *Thread) httpDispatch(req *Struct, routes *List, middleware *List) (Value, error) {
 	method, _ := field(req, "method").(string)
 	path, _ := field(req, "path").(string)
+	var handler Value
 	var allowed []string
 	for _, rv := range routes.Snapshot() {
 		route, ok := rv.(*Struct)
@@ -322,14 +471,27 @@ func (th *Thread) httpDispatch(req *Struct, routes *List) (Value, error) {
 		}
 		f := req.Snapshot()
 		f[req.T.FieldIdx["params"]] = pm
-		return th.call(field(route, "handler"), &Struct{T: req.T, F: f})
+		req = &Struct{T: req.T, F: f}
+		handler = field(route, "handler")
+		break
 	}
-	if len(allowed) > 0 {
-		r := th.httpText(405, "method not allowed")
-		r.F[2].(*Map).Set("allow", strings.Join(dedup(allowed), ", "))
-		return r, nil
+	if handler == nil {
+		if len(allowed) > 0 {
+			r := th.httpText(405, "method not allowed")
+			r.F[2].(*Map).Set("allow", strings.Join(dedup(allowed), ", "))
+			handler = th.httpFixedHandler(r)
+		} else {
+			handler = th.httpFixedHandler(th.httpText(404, "not found"))
+		}
 	}
-	return th.httpText(404, "not found"), nil
+	if middleware != nil && middleware.Len() > 0 {
+		h, err := th.wrapMiddleware(middleware, handler)
+		if err != nil {
+			return nil, err
+		}
+		handler = h
+	}
+	return th.call(handler, req)
 }
 
 func dedup(xs []string) []string {

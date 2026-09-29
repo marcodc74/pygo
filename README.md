@@ -31,13 +31,82 @@ Ogni scelta di progetto risponde a un limite concreto degli LLM.
 | Dimentica i `nil` | `nil` esiste solo nei tipi `T?`; usare un `T?` senza controllarlo è un errore (`E0310`), con narrowing su `if x != nil` |
 | Codice generato = codice non fidato | Gli effetti sono capability (`uses fs, net`) verificate staticamente e a runtime; di default è tutto negato e si abilita con `--allow` |
 | Costruisce HTML concatenando stringhe (XSS) | Il markup ha un tipo proprio, `Html`, che si scrive solo con `html"..."`: ogni `${x}` viene escapato secondo il contesto (testo, attributo, URL, script). Una `Str` non diventa mai `Html` (`E0301`, con correzione automatica) |
-| Cicli infiniti durante i tentativi | `--max-steps` (budget deterministico) e `--timeout` |
+| Cicli infiniti e attese bloccanti durante i tentativi | `--max-steps` (budget deterministico) e `--timeout` (ferma anche i blocchi su canali/task); ricorsione troppo profonda → panico `R0018`, mai un crash |
 | Lavora a cicli scrivi → esegui → correggi | Diagnostica JSON con codici stabili, hint e correzioni applicabili; panic in JSON con i valori delle variabili coinvolte; contratti `requires`/`ensures`; `test` inline |
 | Errori non riproducibili | Mappe ordinate, `rand` con seme, orologio come effetto esplicito, overflow degli interi = errore |
 
 Altre regole: niente shadowing, niente variabili globali mutabili, niente
 conversioni implicite (`Int + Float` è un errore), niente "truthiness" (le
 condizioni devono essere `Bool`), `match` esaustivo sugli enum.
+
+## Confronto con gli altri linguaggi
+
+Non è un benchmark: è una mappa di quanto un linguaggio aiuta un modello a
+produrre codice **corretto e sicuro**. Pygo rinuncia all'ecosistema per
+vincere sulla verificabilità e sul contenimento.
+
+```mermaid
+quadrantChart
+    title Aiuto alle IA e ampiezza dell'ecosistema
+    x-axis "Ecosistema piccolo" --> "Ecosistema enorme"
+    y-axis "Ostile alle IA" --> "Progettato per le IA"
+    quadrant-1 "Obiettivo di Pygo"
+    quadrant-2 "Nativi per IA"
+    quadrant-3 "Nicchia"
+    quadrant-4 "Ecosistema ricco, verifica debole"
+    "Pygo": [0.15, 0.93]
+    "Rust": [0.62, 0.42]
+    "Go": [0.70, 0.55]
+    "TypeScript": [0.88, 0.42]
+    "Python": [0.96, 0.34]
+    "JavaScript": [0.92, 0.28]
+```
+
+| Criterio (uso con un LLM) | Pygo | Python | Go | TypeScript | Rust |
+|---|---|---|---|---|---|
+| Impedisce gli errori tipici dell'LLM | ██████████ | ███░░░░░░░ | ██████░░░░ | █████░░░░░ | ████████░░ |
+| Sandbox di codice non fidato | ██████████ | ██░░░░░░░░ | █████░░░░░ | ████░░░░░░ | ███████░░░ |
+| Determinismo / riproducibilità | █████████░ | █████░░░░░ | ██████░░░░ | ██████░░░░ | ███████░░░ |
+| Diagnostica JSON per agenti | ██████████ | ████░░░░░░ | ████░░░░░░ | █████░░░░░ | ████░░░░░░ |
+| Ecosistema e librerie | ███░░░░░░░ | ██████████ | ████████░░ | ██████████ | ███████░░░ |
+| Performance a runtime | █████░░░░░ | ███░░░░░░░ | █████████░ | ███████░░░ | ██████████ |
+| Presenza nei dati di addestramento | █░░░░░░░░░ | ██████████ | ████████░░ | █████████░ | ███████░░░ |
+
+> Scala qualitativa 0–10, non un benchmark. Python e TypeScript vincono
+> sull'ecosistema; Pygo vince su ciò che serve **dopo** che il codice è stato
+> generato: verificarlo ed eseguirlo senza rischi.
+
+## Come migliora la programmazione con l'IA
+
+Un LLM procede per tentativi. Pygo rende ogni tentativo verificabile da una
+macchina: il ciclo diventa esplicito e il modello riceve errori strutturati,
+non prosa da interpretare.
+
+```mermaid
+flowchart LR
+    P["Obiettivo"] --> G["L'LLM scrive .pg"]
+    G --> C{"pygo check"}
+    C -- "E0306 + fix" --> G
+    C -- "pulito" --> T["pygo test / run"]
+    T -- "panic JSON, R0018, valori" --> G
+    T -- "verde" --> B["pygo build / deploy"]
+    B --> S["Sandbox: capability, budget, timeout"]
+```
+
+| Cosa sbagliano gli LLM | Cosa fa Pygo | Codice / comando |
+|---|---|---|
+| Sintassi non valida | Grammatica senza ambiguità, una sola forma canonica | `pygo fmt`, `pygo grammar` (roadmap) |
+| API inventate | Firme stdlib tipizzate e suggerimento `did you mean` | `pygo check --json` |
+| Argomenti invertiti | Solo il primo argomento è posizionale | `E0306` |
+| Errori e `nil` dimenticati | `-> !T`, `T?` e narrowing obbligatori | `E0401`, `E0310` |
+| Loop e attese infinite | Budget di passi, timeout, ricorsione limitata | `--max-steps`, `--timeout`, `R0018` |
+| Codice generato non fidato | Capability negate di default, sandbox Kubernetes | `--allow`, `job-sandbox.yaml` |
+| Risultati non riproducibili | Mappe ordinate, `rand` con seme, orologio-effetto, overflow = errore | — |
+| Correzione manuale | Diagnostiche JSON con hint e correzione applicabile | `pygo fix` |
+
+Il piano completo — constrained decoding dalla grammatica, contesto a budget,
+record/replay degli effetti, contratti generati dai test — è in
+[`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
 
 ## Esempio
 
@@ -217,6 +286,13 @@ Esempio di diagnostica (`pygo check --json`):
   file del frontend con il content-type giusto, senza file nascosti né `..`;
   `http.form`, `http.redirect`, cookie con default sicuri (`HttpOnly`,
   `Secure`, `SameSite=Lax`) e un limite alla dimensione del body (413).
+- **Middleware**: `http.dispatch(req, routes: routes(), middleware: [http.request_id(), http.log_requests(), http.recover()])`.
+  Un middleware è `http.Middleware{name, apply}` (prende l'handler successivo e
+  restituisce quello da eseguire); girano da sinistra a destra, possono
+  rispondere senza chiamare `next` e avvolgono anche 404/405. Pronti:
+  `request_id` (echo di `x-request-id`, riproducibile), `log_requests` (una
+  riga JSON per richiesta), `recover` (panic → 500) e `timeout(ms)` (→ 503).
+  Vedi [`examples/middleware.pg`](examples/middleware.pg).
 - **Libreria standard**: `json`, `fs`, `os`, `http` (client e server con
   shutdown graceful e routing), `html`, `time`, `log` (JSON su stderr), `math`, `re`, `proc`,
   `rand`. Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
@@ -306,6 +382,7 @@ python integrations/agent.py --provider claude "scrivi un programma Pygo che ...
 ## Documentazione
 
 - [`docs/LLM.md`](docs/LLM.md): come usare Pygo con i vari LLM, dalle chat alle CLI alle API.
+- [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md): il piano per un linguaggio AI-native (milestone, ROI, criteri di accettazione).
 - [`docs/SPEC.md`](docs/SPEC.md): specifica completa del linguaggio.
 - [`docs/BYTECODE.md`](docs/BYTECODE.md): la macchina virtuale, le istruzioni e il formato `.pgc`.
 - [`docs/GUIDE.md`](docs/GUIDE.md): guida compatta da mettere nel contesto di un modello (`pygo guide`).
@@ -333,7 +410,7 @@ internal/printer    stampa canonica dell'AST (pygo fmt)
 internal/loader     moduli locali (import "./x"), cicli, bundle
 internal/guide      guida compatta per il contesto dei modelli
 deploy/             Dockerfile, manifest Kubernetes
-examples/           hello, errors, concurrency, server (HTTP), wordcount (CLI su file)
+examples/           hello, errors, concurrency, server (HTTP), middleware (HTTP), wordcount (CLI su file)
 ```
 
 ## Stato
@@ -354,22 +431,34 @@ v0.2.
   negli eseguibili. Ogni programma di test gira in tre modi (interprete, VM, VM da `.pgc`), che
   devono dare output, errori, trace e numero di passi identici. Dettagli in
   [`docs/BYTECODE.md`](docs/BYTECODE.md).
+- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`), pronto per i servizi generati.
 - **Integrazione con gli LLM** ([`docs/LLM.md`](docs/LLM.md)):
   - `AGENTS.md` e una skill per Claude Code;
   - tool e agente per le API di Claude, OpenAI, Gemini e modelli locali. Li ho provati con gli SDK reali e risposte simulate, non contro le API vere.
 - **Test:** unit test, test golden sugli esempi e race detector passano.
 - **CI:** GitHub Actions su Linux, macOS e Windows, con build dei binari e smoke test Docker.
 
-**Roadmap:**
-- firma digitale dei binari Windows (Authenticode);
-- backend WebAssembly;
-- trait e interfacce;
-- `select` su più canali;
-- effetti per le funzioni di ordine superiore;
-- LSP;
-- package manager;
-- record/replay degli effetti;
-- conservare i commenti normali in `fmt`.
+## Roadmap
+
+```mermaid
+gantt
+    title Pygo, per tappe
+    dateFormat YYYY-MM-DD
+    axisFormat %Y-%m
+    section Rilasciato
+    Linguaggio, checker, stdlib        :done, 2025-06-01, 2026-03-01
+    VM a bytecode, agenti, deploy      :done, 2026-03-01, 2026-09-01
+    section In corso
+    Auth crypto e JWT (SRV-2)          :active, 2026-09-01, 2027-01-01
+    OpenAPI e servizi di produzione    :2026-10-01, 2027-03-01
+    section Dopo
+    Package manager, WASM, LSP         :2027-03-01, 2027-12-01
+    Record/replay, contratti dai test  :2027-09-01, 2028-06-01
+```
+
+- **Prossimo — servizi di produzione (M7):** `crypto` e `jwt` tipizzati senza `python` (`SRV-2`), OpenAPI, `extern sql`, TLS, metriche, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
+- **Piattaforma:** firma Authenticode dei binari Windows, backend WebAssembly, LSP, package manager, `select` su più canali, effetti per le funzioni di ordine superiore, conservare i commenti in `fmt`, trait e interfacce.
+- **Verso l'IA nativa (M1–M6):** constrained decoding dalla grammatica, contesto selezionato a budget, record/replay degli effetti, contratti generati dagli esempi, correzione con prove (property test e fuzzing).
 
 ## Sviluppo
 

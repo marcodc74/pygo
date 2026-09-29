@@ -717,12 +717,26 @@ func (p *Parser) unary() ast.Expr {
 	t := p.tok()
 	switch {
 	case p.is("-"):
+		// -9223372036854775808 parses as unary minus applied to the magnitude
+		// 2^63, which alone does not fit int64. Fold it here so the negative
+		// literal (and only it) is accepted.
+		if nt := p.peekTok(1); nt.Kind == lexer.INT {
+			if v, ok := minIntLiteral(nt.Text); ok {
+				p.next() // '-'
+				p.next() // the literal
+				return &ast.IntLit{Pos: t.Pos, Value: v}
+			}
+		}
 		p.next()
 		x := p.unary()
-		// fold negative literals so that -9223372036854775808 works
+		// Fold negative literals only when the value fits: negating MinInt64
+		// overflows, so leave it to the runtime, which reports R0005 exactly as
+		// for the parenthesised form -(0 - ...) .
 		switch l := x.(type) {
 		case *ast.IntLit:
-			return &ast.IntLit{Pos: t.Pos, Value: -l.Value}
+			if l.Value != int64(-1)<<63 {
+				return &ast.IntLit{Pos: t.Pos, Value: -l.Value}
+			}
 		case *ast.FloatLit:
 			return &ast.FloatLit{Pos: t.Pos, Value: -l.Value}
 		}
@@ -903,6 +917,17 @@ func (p *Parser) primary() ast.Expr {
 func parseInt(s string) (int64, error) {
 	s = strings.ReplaceAll(s, "_", "")
 	return strconv.ParseInt(s, 0, 64)
+}
+
+// minIntLiteral reports whether text is the magnitude 2^63, the one positive
+// integer literal that does not fit int64. It is valid only right after a
+// unary minus, to write -9223372036854775808.
+func minIntLiteral(text string) (int64, bool) {
+	v, err := strconv.ParseUint(strings.ReplaceAll(text, "_", ""), 0, 64)
+	if err != nil || v != uint64(1)<<63 {
+		return 0, false
+	}
+	return int64(-1) << 63, true
 }
 
 func (p *Parser) strLit(t lexer.Token) ast.Expr {

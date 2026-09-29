@@ -40,6 +40,7 @@ fn first[T](xs: List[T]) -> T? => xs.first()
   - `let v = try f()` propagates (the current function must be `-> !T`).
   - `let v = f() catch e { default_value }` handles it; `e.message`, `e.code`, `e.data`. The catch block may `return`/`fail`.
 - Bugs (index out of range, missing key with `m[k]`, division by zero, overflow, failed assert/contract) are panics: not catchable, exit code 2.
+- Limits: `--max-steps`/`--timeout` abort with panics `R0011`/`R0012`; too-deep recursion is `R0018`. A channel/task await blocks until its peer, so pass `--timeout` to bound it.
 
 ## Structs, enums, match
 ```
@@ -97,6 +98,7 @@ fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.d
 - The FIRST matching route wins; same path with another method → 405, no match → 404. Test handlers by calling them with an `http.Request{...}` literal.
 - Responses: `http.text/json/html(status, body: x)`, `http.redirect("/items")` (303), `http.Response{status: 200, body: b, headers: {...}, cookies: [http.Cookie{name: "s", value: v}]}` (cookies default to HttpOnly, Secure, SameSite=Lax). Request cookies: `req.cookies.get("s")`.
 - Bodies over `max_body` (serve argument, default 1 MiB) get 413.
+- Middleware: `http.dispatch(req, routes: routes(), middleware: [http.request_id(), http.log_requests(), http.recover()])`. Built-ins: `request_id`, `log_requests`, `recover` (panic → 500), `timeout(ms)` (→ 503); a custom one is `http.Middleware{name: "auth", apply: fn(next) => fn(req) { ... }}`. They run left-to-right (first is outermost) and may short-circuit without calling `next`; they also wrap 404/405.
 
 ## Tests
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.
@@ -259,11 +261,16 @@ struct http.Request { method: Str, path: Str, query: Map[Str, Str], headers: Map
 struct http.Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, http_only: Bool = true, secure: Bool = true, same_site: Str = "Lax" }
 struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
 struct http.Route { method: Str, path: Str, handler: fn(Request) -> Response }
+struct http.Middleware { name: Str, apply: fn(fn(Request) -> Response) -> fn(Request) -> Response }
 fn http.get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net
-fn http.dispatch(req: Request, routes: List[Route]) -> Response
+fn http.dispatch(req: Request, routes: List[Route], middleware: List[Middleware] = []) -> Response
+fn http.recover() -> Middleware
+fn http.log_requests() -> Middleware
+fn http.request_id() -> Middleware
+fn http.timeout(ms: Int) -> Middleware
 fn http.static(req: Request, dir: Str) -> Response uses fs
 fn http.form(req: Request) -> !Map[Str, Str]
 fn http.redirect(location: Str, status: Int = 303) -> Response

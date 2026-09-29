@@ -161,6 +161,29 @@ func parseAllow(s string) map[string]bool {
 	return allow
 }
 
+// unknownAllow returns the first capability in s that is not in the closed set,
+// or "" when all of them are known.
+func unknownAllow(s string) string {
+	known := func(c string) bool {
+		for _, e := range sig.AllEffects {
+			if e == c {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range strings.Split(s, ",") {
+		c = strings.TrimSpace(c)
+		if c == "" || c == "all" || known(c) {
+			continue
+		}
+		return c
+	}
+	return ""
+}
+
+func allowHint() string { return strings.Join(sig.AllEffects, ",") + ",all" }
+
 func cmdCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "print diagnostics as JSON")
@@ -200,6 +223,15 @@ func cmdRun(args []string) int {
 	fs.Parse(args)
 	if !validEngine(*engine) {
 		return 2
+	}
+	if *maxSteps < 0 {
+		return fail2("--max-steps must be >= 0")
+	}
+	if *timeout < 0 {
+		return fail2("--timeout must be >= 0")
+	}
+	if bad := unknownAllow(*allowS); bad != "" {
+		return fail2("unknown capability %q (allowed: %s)", bad, allowHint())
 	}
 	if fs.NArg() < 1 && *snippet == "" {
 		fmt.Fprintln(os.Stderr, "usage: pygo run [flags] file.pg [-- args]")
@@ -278,6 +310,9 @@ func cmdTest(args []string) int {
 	fs.Parse(args)
 	if !validEngine(*engine) {
 		return 2
+	}
+	if bad := unknownAllow(*allowS); bad != "" {
+		return fail2("unknown capability %q (allowed: %s)", bad, allowHint())
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: pygo test [--json] [--filter s] file.pg|dir")

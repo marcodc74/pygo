@@ -155,7 +155,19 @@ func init() {
 			return th.httpServe(a[0].(string), a[1], a[2].(int64))
 		},
 		"dispatch": func(th *Thread, _ Value, a []Value) (Value, error) {
-			return th.httpDispatch(a[0].(*Struct), a[1].(*List))
+			return th.httpDispatch(a[0].(*Struct), a[1].(*List), a[2].(*List))
+		},
+		"recover": func(th *Thread, _ Value, _ []Value) (Value, error) {
+			return th.mwRecover(), nil
+		},
+		"log_requests": func(th *Thread, _ Value, _ []Value) (Value, error) {
+			return th.mwLogRequests(), nil
+		},
+		"request_id": func(th *Thread, _ Value, _ []Value) (Value, error) {
+			return th.mwRequestID(), nil
+		},
+		"timeout": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.mwTimeout(a[0].(int64))
 		},
 		"static": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.httpStatic(a[0].(*Struct), a[1].(string))

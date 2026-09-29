@@ -123,7 +123,11 @@ func cmdFix(args []string) int {
 	}
 	ds = diag.Sort(ds)
 	if *dry {
-		fmt.Print(src)
+		if *asJSON {
+			fmt.Fprint(os.Stderr, src)
+		} else {
+			fmt.Print(src)
+		}
 	} else if src != orig {
 		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
 			return fail2("%v", err)
@@ -206,6 +210,18 @@ func cmdGuide(args []string) int {
 }
 
 // ---------- describe ----------
+
+// withoutJSONFlag accepts --json as a no-op: describe and outline always print
+// JSON, but every other subcommand takes --json, so agents pass it uniformly.
+func withoutJSONFlag(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if a != "--json" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
 
 type paramDesc struct {
 	Name     string `json:"name"`
@@ -332,6 +348,7 @@ func describeDecls(decls []ast.Decl) map[string]any {
 }
 
 func cmdDescribe(args []string) int {
+	args = withoutJSONFlag(args)
 	if len(args) != 1 {
 		return fail2("usage: pygo describe file.pg | <stdlib module> | core")
 	}
@@ -444,6 +461,7 @@ func outline(src string, f *ast.File) []symbol {
 }
 
 func cmdOutline(args []string) int {
+	args = withoutJSONFlag(args)
 	if len(args) != 1 {
 		return fail2("usage: pygo outline file.pg")
 	}

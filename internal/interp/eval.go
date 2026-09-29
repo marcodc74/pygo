@@ -736,6 +736,9 @@ func (th *Thread) callBuiltin(b *Builtin, pos []Value, named []namedArg) (Value,
 }
 
 func (th *Thread) callFunction(f *Function, self Value, pos []Value, named []namedArg) (result Value, err error) {
+	if len(th.frames) > maxCallDepth {
+		return nil, th.panicAt(f.Pos, PDepth, "reduce recursion depth or rewrite it as a loop", "call stack too deep (more than %d frames)", maxCallDepth)
+	}
 	var vals []Value
 	if f.Proto != nil && len(named) == 0 && len(pos) == len(f.Params) && !hasVariadic(f.Params) {
 		vals = pos // exactly the positional arguments: nothing to bind
