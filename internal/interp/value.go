@@ -305,6 +305,10 @@ func TypeName(v Value) string {
 		return "Str"
 	case bool:
 		return "Bool"
+	case HtmlStr:
+		return "Html"
+	case SqlStr:
+		return "Sql"
 	case *List:
 		return "List"
 	case *Map:
@@ -340,7 +344,7 @@ func Equal(a, b Value) bool {
 	switch a := a.(type) {
 	case nil:
 		return b == nil
-	case int64, float64, string, bool:
+	case int64, float64, string, bool, HtmlStr, SqlStr:
 		return a == b
 	case *List:
 		bl, ok := b.(*List)
@@ -466,8 +470,13 @@ func cmp3(lt, gt bool) int {
 
 // Str is the canonical text form (used by print, str and interpolation).
 func Str(v Value) string {
-	if s, ok := v.(string); ok {
+	switch s := v.(type) {
+	case string:
 		return s
+	case HtmlStr:
+		return string(s)
+	case SqlStr:
+		return string(s)
 	}
 	var b strings.Builder
 	writeRepr(&b, v, 0)
@@ -512,6 +521,10 @@ func writeRepr(b *strings.Builder, v Value, depth int) {
 		b.WriteString(strconv.FormatBool(v))
 	case string:
 		b.WriteString(strconv.Quote(v))
+	case HtmlStr:
+		b.WriteString("html" + strconv.Quote(string(v)))
+	case SqlStr:
+		b.WriteString("sql" + strconv.Quote(string(v)))
 	case *List:
 		b.WriteByte('[')
 		for i, x := range v.Snapshot() {

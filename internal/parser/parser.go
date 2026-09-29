@@ -199,7 +199,7 @@ func (p *Parser) decl() ast.Decl {
 	switch {
 	case p.is("import"):
 		p.next()
-		if p.tok().Kind != lexer.STRING {
+		if p.tok().Kind != lexer.STRING || p.tok().Prefix != "" {
 			p.errorf("E0110", p.tok().Pos, `write import "json" or import "./path/module"`, "expected module path string")
 		}
 		st := p.next()
@@ -240,7 +240,7 @@ func (p *Parser) decl() ast.Decl {
 		return d
 	case p.is("test"):
 		p.next()
-		if p.tok().Kind != lexer.STRING {
+		if p.tok().Kind != lexer.STRING || p.tok().Prefix != "" {
 			p.errorf("E0110", p.tok().Pos, `write test "description" { ... }`, "expected test name string")
 		}
 		name := p.next().Parts[0].Text
@@ -906,7 +906,7 @@ func parseInt(s string) (int64, error) {
 }
 
 func (p *Parser) strLit(t lexer.Token) ast.Expr {
-	s := &ast.StrLit{Pos: t.Pos}
+	s := &ast.StrLit{Pos: t.Pos, Kind: t.Prefix, Raw: t.Raw}
 	for _, part := range t.Parts {
 		if !part.IsExpr {
 			s.Parts = append(s.Parts, ast.StrPart{Lit: part.Text})
@@ -1062,6 +1062,9 @@ func (p *Parser) litPatternValue() ast.Expr {
 	case t.Kind == lexer.STRING:
 		p.next()
 		s := p.strLit(t).(*ast.StrLit)
+		if s.Kind != "" {
+			p.errorf("E0119", t.Pos, "match the text instead: str(x)", "%s literals cannot be patterns", s.Kind)
+		}
 		for _, part := range s.Parts {
 			if part.Expr != nil {
 				p.errorf("E0119", t.Pos, "", "string patterns cannot contain interpolation")
@@ -1088,7 +1091,7 @@ func (p *Parser) externDecl() *ast.ExternDecl {
 		p.errorf("E0120", lang.Pos, `write extern python "module" { ... }`, "unsupported foreign language '%s' (supported: python)", lang.Text)
 	}
 	d.Lang = lang.Text
-	if p.tok().Kind != lexer.STRING || len(p.tok().Parts) != 1 || p.tok().Parts[0].IsExpr {
+	if p.tok().Kind != lexer.STRING || p.tok().Prefix != "" || len(p.tok().Parts) != 1 || p.tok().Parts[0].IsExpr {
 		p.errorf("E0110", p.tok().Pos, `write extern python "statistics" { ... }`, "expected the foreign module name as a string")
 	}
 	d.Module = p.next().Parts[0].Text

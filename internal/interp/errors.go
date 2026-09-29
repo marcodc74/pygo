@@ -92,7 +92,7 @@ const (
 	PInternal   = "R0099" // interpreter bug
 )
 
-func sortedKeys(m map[string]string) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	ks := make([]string, 0, len(m))
 	for k := range m {
 		ks = append(ks, k)

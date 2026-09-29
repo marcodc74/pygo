@@ -121,6 +121,9 @@ func (th *Thread) eval(env *Env, e ast.Expr) (Value, error) {
 }
 
 func (th *Thread) evalStr(env *Env, e *ast.StrLit) (Value, error) {
+	if e.Kind != "" {
+		return th.evalTrusted(env, e)
+	}
 	if len(e.Parts) == 1 && e.Parts[0].Expr == nil {
 		return e.Parts[0].Lit, nil
 	}

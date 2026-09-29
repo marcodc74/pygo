@@ -24,6 +24,9 @@ type Checker struct {
 	fallibleCalls int
 	// Effects maps "file:fn" to the effects each function declares (for tools).
 	Effects map[string][]string
+	// plainLit is the last Str literal checked where Html or Sql was
+	// expected; mismatch offers to turn it into an html/sql literal.
+	plainLit *ast.StrLit
 }
 
 // Check type-checks a loaded program and returns its diagnostics.
@@ -277,7 +280,7 @@ func (c *Checker) collect(file string) {
 
 func (c *Checker) checkTypeName(name string, pos ast.Pos) {
 	switch name {
-	case "Int", "Float", "Str", "Bool", "Any", "List", "Map", "Chan", "Task", "Range", "Error", "Type", "Nil":
+	case "Int", "Float", "Str", "Bool", "Html", "Sql", "Any", "List", "Map", "Chan", "Task", "Range", "Error", "Type", "Nil":
 		c.errorf("E0207", pos, "choose another name", "'%s' is a builtin type name", name)
 	}
 }
@@ -381,6 +384,10 @@ func (c *Checker) resolveBase(te *ast.TypeExpr, tps map[string]bool) *Type {
 		return tStr
 	case "Bool":
 		return tBool
+	case "Html":
+		return tHtml
+	case "Sql":
+		return tSql
 	case "Any":
 		return tAny
 	case "Nil":
@@ -447,7 +454,7 @@ func (c *Checker) resolveBase(te *ast.TypeExpr, tps map[string]bool) *Type {
 	if ei, ok := m.enums[te.Name]; ok {
 		return &Type{K: KEnum, Enum: ei}
 	}
-	cands := append(m.typeNames(), "Int", "Float", "Str", "Bool", "Any", "List", "Map", "Chan", "Task", "Range", "Error")
+	cands := append(m.typeNames(), "Int", "Float", "Str", "Bool", "Html", "Sql", "Any", "List", "Map", "Chan", "Task", "Range", "Error")
 	hint := didYouMean(te.Name, cands)
 	if hint == "" && len(te.Name) == 1 {
 		hint = fmt.Sprintf("declare the type parameter: fn name[%s](...)", te.Name)

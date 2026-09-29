@@ -421,7 +421,21 @@ func (p *pr) stmt(s ast.Stmt) {
 	}
 }
 
-func escapeLit(s string) string {
+// multiLine reports whether a string literal is printed in the """...""" form
+// (its text contains a newline).
+func multiLine(e *ast.StrLit) bool {
+	for _, part := range e.Parts {
+		if part.Expr == nil && strings.Contains(part.Lit, "\n") {
+			return true
+		}
+	}
+	return false
+}
+
+// escapeLit escapes the text of a literal part. In the triple-quoted form
+// newlines stay literal and a '"' is escaped only where it could close the
+// literal: before another '"', or at the very end (last marks the final part).
+func escapeLit(s string, triple, last bool) string {
 	var b strings.Builder
 	rs := []rune(s)
 	for i, r := range rs {
@@ -429,7 +443,11 @@ func escapeLit(s string) string {
 		case '\\':
 			b.WriteString(`\\`)
 		case '"':
-			b.WriteString(`\"`)
+			if triple && !(i+1 < len(rs) && rs[i+1] == '"') && !(last && i == len(rs)-1) {
+				b.WriteByte('"')
+			} else {
+				b.WriteString(`\"`)
+			}
 		case '$':
 			if i+1 < len(rs) && rs[i+1] == '{' {
 				b.WriteString(`\$`)
@@ -437,7 +455,11 @@ func escapeLit(s string) string {
 				b.WriteByte('$')
 			}
 		case '\n':
-			b.WriteString(`\n`)
+			if triple {
+				b.WriteByte('\n')
+			} else {
+				b.WriteString(`\n`)
+			}
 		case '\t':
 			b.WriteString(`\t`)
 		case '\r':
@@ -485,10 +507,19 @@ func (p *pr) expr(e ast.Expr) {
 	case *ast.NilLit:
 		p.w("nil")
 	case *ast.StrLit:
-		p.w(`"`)
-		for _, part := range e.Parts {
+		// the lexer drops a newline right after an opening """, so the
+		// triple-quoted form always starts with one
+		quote := `"`
+		if multiLine(e) {
+			quote = `"""`
+		}
+		p.w(e.Kind, quote)
+		if quote == `"""` {
+			p.w("\n")
+		}
+		for i, part := range e.Parts {
 			if part.Expr == nil {
-				p.w(escapeLit(part.Lit))
+				p.w(escapeLit(part.Lit, quote == `"""`, i == len(e.Parts)-1))
 				continue
 			}
 			p.w("${")
@@ -498,7 +529,7 @@ func (p *pr) expr(e ast.Expr) {
 			}
 			p.w("}")
 		}
-		p.w(`"`)
+		p.w(quote)
 	case *ast.ListLit:
 		p.w("[")
 		for i, x := range e.Elems {

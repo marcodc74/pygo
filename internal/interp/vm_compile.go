@@ -155,7 +155,7 @@ func stackEffect(op Opcode, a, b, cc int) int {
 		return 1 - a
 	case OpMakeMap:
 		return 1 - 2*a
-	case OpStrBuild, OpMakeStruct:
+	case OpStrBuild, OpMakeStruct, OpHtml:
 		return 1 - b
 	case OpCall, OpSpawn:
 		return -(a + cc)
@@ -657,6 +657,23 @@ func (c *fnComp) expr(e ast.Expr) {
 }
 
 func (c *fnComp) strLit(e *ast.StrLit) {
+	switch e.Kind {
+	case "sql":
+		c.emit(OpConst, c.konst(SqlStr(sqlText(e))), 0, 0)
+		return
+	case "html":
+		a := c.aux(e)
+		n := 0
+		for _, part := range e.Parts {
+			if part.Expr != nil {
+				c.expr(part.Expr)
+				n++
+			}
+		}
+		c.at(e.Pos)
+		c.emit(OpHtml, a, n, 0)
+		return
+	}
 	if len(e.Parts) == 1 && e.Parts[0].Expr == nil {
 		c.emit(OpConst, c.konst(e.Parts[0].Lit), 0, 0)
 		return
