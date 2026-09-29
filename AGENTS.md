@@ -66,6 +66,12 @@ go test -bench . ./internal/interp/  # engine benchmarks on bench/*.pg
   `internal/guide/guide.md` (then run `make guide` to refresh `docs/GUIDE.md`),
   `docs/SPEC.md`, `README.md` (Italian), `README_AI.md`, the `docs/ROADMAP_AI.md`
   status, and `pygo explain`/hint texts when messages change. Stale docs are a bug.
+- Every feature gets a separate **adversarial pass** before the PR, not a second
+  reading of the happy path: probe hostile and boundary inputs, failure and
+  denial modes, type confusion and handle misuse, concurrency, resource limits
+  and determinism; turn each finding into a regression test, fix it, and state
+  plainly in the PR what was *not* covered. Tests written alongside the code are
+  not the adversarial pass.
 - README.md is Italian; code, comments, `docs/*.md` and `internal/guide/guide.md`
   are English — don't translate between them.
 - `integrations/AGENTS.md` is a **template** for other projects that *write Pygo*,
