@@ -89,6 +89,7 @@ const (
 	PArgs       = "R0015" // wrong arguments
 	PMatch      = "R0016" // no match arm matched
 	PChan       = "R0017" // channel misuse
+	PDepth      = "R0018" // call stack too deep
 	PInternal   = "R0099" // interpreter bug
 )
 
@@ -116,4 +117,10 @@ func (th *Thread) panicAt(pos ast.Pos, code, hint, format string, args ...any) *
 		Hint:    hint,
 		Trace:   th.trace(),
 	}
+}
+
+// timeoutErr is returned by a blocking operation (channel send/recv, task wait,
+// chan iteration) when --timeout fires.
+func (th *Thread) timeoutErr() error {
+	return th.panicAt(th.top().pos, PTimeout, "raise --timeout or look for an infinite loop / blocking call", "timeout of %s exceeded", th.in.opt.Timeout)
 }

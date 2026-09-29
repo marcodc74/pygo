@@ -179,6 +179,39 @@ fn main() uses fs {
 	}
 }
 
+// http.static must refuse symlinks that lead outside dir, plus traversal,
+// backslashes and NUL, while serving normal files.
+func TestStaticRejectsEscape(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o644)
+	os.WriteFile(filepath.Join(dir, "ok.txt"), []byte("ok"), 0o644)
+	os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "link.txt")) // best effort
+
+	src := `
+import "http"
+fn file(req: http.Request) -> http.Response uses fs => http.static(req, dir: "` + filepath.ToSlash(dir) + `")
+fn get(p: Str) -> Int uses fs {
+    let routes = [http.Route{method: "GET", path: "/static/{path...}", handler: file}]
+    return http.dispatch(http.Request{method: "GET", path: p, query: {}, headers: {}, body: ""}, routes: routes).status
+}
+fn main() uses fs {
+    print(get("/static/ok.txt"))
+    print(get("/static/../secret.txt"))
+    print(get("/static/a\\b"))
+    print(get("/static/a\u{0}b"))
+    print(get("/static/link.txt"))
+}
+`
+	out, res := runSrc(t, src, "fs")
+	if res.Status != "ok" {
+		t.Fatalf("%s\n%s", res.Describe(), out)
+	}
+	if got := strings.TrimSpace(out); got != "200\n404\n404\n404\n404" {
+		t.Fatalf("got:\n%s", got)
+	}
+}
+
 // webHandler loads a program and returns the net/http handler serving its
 // handle function, on the given engine.
 func webHandler(t *testing.T, src string, maxBody int64, engine string) (http.Handler, *bytes.Buffer) {

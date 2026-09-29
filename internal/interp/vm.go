@@ -528,7 +528,12 @@ func (th *Thread) runProto(f *Function, p *Proto, args []Value) (Value, error) {
 			}
 		case OpIterNext:
 			it := stack[len(stack)-1].(*vmIter)
-			k, v, ok := it.next()
+			var k, v Value
+			var ok bool
+			k, v, ok, err = it.next(th)
+			if err != nil {
+				break
+			}
 			if !ok {
 				pc = int(in.A)
 				break
@@ -791,49 +796,54 @@ func (th *Thread) newIter(s *ast.For, it Value) (*vmIter, error) {
 }
 
 // next returns (key, value, ok). For maps without a key variable the value
-// is the key, as in the interpreter.
-func (it *vmIter) next() (Value, Value, bool) {
+// is the key, as in the interpreter. For channels it also unblocks on
+// --timeout, returning a non-nil error.
+func (it *vmIter) next(th *Thread) (Value, Value, bool, error) {
 	switch it.kind {
 	case 0:
 		if it.n >= it.end {
-			return nil, nil, false
+			return nil, nil, false, nil
 		}
 		k, v := int64(it.i), it.n
 		it.i++
 		it.n++
-		return k, v, true
+		return k, v, true, nil
 	case 1:
 		if it.i >= len(it.items) {
-			return nil, nil, false
+			return nil, nil, false, nil
 		}
 		k, v := int64(it.i), it.items[it.i]
 		it.i++
-		return k, v, true
+		return k, v, true, nil
 	case 2:
 		if it.i >= len(it.keys) {
-			return nil, nil, false
+			return nil, nil, false, nil
 		}
 		k, v := it.keys[it.i], it.items[it.i]
 		it.i++
 		if !it.hasKey {
-			return nil, k, true
+			return nil, k, true, nil
 		}
-		return k, v, true
+		return k, v, true, nil
 	case 3:
 		if it.i >= len(it.runes) {
-			return nil, nil, false
+			return nil, nil, false, nil
 		}
 		k, v := int64(it.i), string(it.runes[it.i])
 		it.i++
-		return k, v, true
+		return k, v, true, nil
 	case 4:
-		v, ok := <-it.ch.ch
-		if !ok {
-			return nil, nil, false
+		select {
+		case v, ok := <-it.ch.ch:
+			if !ok {
+				return nil, nil, false, nil
+			}
+			k := it.count
+			it.count++
+			return k, v, true, nil
+		case <-th.in.stop:
+			return nil, nil, false, th.timeoutErr()
 		}
-		k := it.count
-		it.count++
-		return k, v, true
 	}
-	return nil, nil, false
+	return nil, nil, false, nil
 }

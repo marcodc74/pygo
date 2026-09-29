@@ -49,6 +49,7 @@ var Explanations = map[string]Explanation{
 	"E0306": {Title: "argument must be named", Detail: "Only the first argument may be positional; the others must be named. This prevents swapped arguments.", Wrong: "transfer(10, \"alice\", \"bob\")", Right: "transfer(10, from: \"alice\", to: \"bob\")"},
 	"E0307": {Title: "missing return", Detail: "A function with a result type must end every path with return, fail or panic."},
 	"E0308": {Title: "invalid return", Detail: "return with a value in a function without result type, or without a value in one that has it."},
+	"E0309": {Title: "invalid format spec", Detail: "The interpolation format spec is malformed. Grammar: [[fill]<|>|^][0][width][.prec][f|e|x|X|b|o|%].", Wrong: "print(\"${x:q}\")", Right: "print(\"${x:.2}\")"},
 	"E0311": {Title: "invalid html interpolation", Detail: "An html\"...\" literal interpolates Str, Int, Float and Bool (escaped for their context), Html (inserted as it is) and List[Html] (concatenated). Build other values into Html first.", Wrong: "html\"<ul>${names}</ul>\"  // names: List[Str]", Right: "html\"<ul>${names.map(fn(n) => html\"<li>${n}</li>\")}</ul>\""},
 	"E0312": {Title: "malformed html literal", Detail: "Each html\"...\" literal must be a well-formed fragment: it cannot end inside a tag, attribute, comment, script or style, and ${} must be in text or in an attribute value. Contexts are checked the way Go's html/template escapes them.", Wrong: "html\"<a title='${t}\"", Right: "html\"<a title='${t}'>link</a>\""},
 	"E0310": {Title: "possibly nil", Detail: "The value has an optional type T? and may be nil. Check it first (if x != nil { ... }, if x == nil { return }) or use x ?? default.", Wrong: "let v = m.get(k)\nprint(v.len())", Right: "let v = m.get(k) ?? \"\"\nprint(v.len())"},
@@ -105,6 +106,7 @@ var Explanations = map[string]Explanation{
 	"R0015": {Title: "bad arguments", Detail: "Wrong number or names of arguments at runtime."},
 	"R0016": {Title: "no match arm", Detail: "No arm of a match accepted the value."},
 	"R0017": {Title: "channel misuse", Detail: "Send on a closed channel, or closing twice."},
+	"R0018": {Title: "call stack too deep", Detail: "Recursion exceeded the interpreter's call-depth limit. Rewrite the recursion as a loop or reduce its depth."},
 	"R0099": {Title: "internal error", Detail: "A bug in the Pygo runtime. Please report it with the program."},
 }
 

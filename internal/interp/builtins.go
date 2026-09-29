@@ -152,7 +152,11 @@ func init() {
 				if !ok {
 					return nil, perr(PType, "", "wait_all expects List[Task], found %s", TypeName(it))
 				}
-				<-t.done
+				select {
+				case <-t.done:
+				case <-th.in.stop:
+					return nil, th.timeoutErr()
+				}
 				if t.err != nil && firstErr == nil {
 					firstErr = t.err
 				}
@@ -576,16 +580,18 @@ func init() {
 			if c.closed.Load() {
 				return nil, perr(PChan, "", "send on closed channel")
 			}
-			defer func() { recover() }() // closed concurrently: drop silently
-			c.ch <- a[0]
-			return nil, nil
+			return nil, sendChan(th, c, a[0])
 		},
 		"recv": func(th *Thread, r Value, a []Value) (Value, error) {
-			v, ok := <-r.(*Chan).ch
-			if !ok {
-				return nil, nil
+			select {
+			case v, ok := <-r.(*Chan).ch:
+				if !ok {
+					return nil, nil
+				}
+				return v, nil
+			case <-th.in.stop:
+				return nil, th.timeoutErr()
 			}
-			return v, nil
 		},
 		"close": func(th *Thread, r Value, a []Value) (Value, error) {
 			c := r.(*Chan)
@@ -603,8 +609,12 @@ func init() {
 	methodImpls["Task"] = map[string]BuiltinFn{
 		"wait": func(th *Thread, r Value, a []Value) (Value, error) {
 			t := r.(*Task)
-			<-t.done
-			return t.val, t.err
+			select {
+			case <-t.done:
+				return t.val, t.err
+			case <-th.in.stop:
+				return nil, th.timeoutErr()
+			}
 		},
 		"done": func(th *Thread, r Value, a []Value) (Value, error) {
 			select {
@@ -614,6 +624,18 @@ func init() {
 				return false, nil
 			}
 		},
+	}
+}
+
+// sendChan sends v, unblocking when --timeout fires. A concurrent close makes
+// the send panic; it is dropped silently, as before.
+func sendChan(th *Thread, c *Chan, v Value) (err error) {
+	defer func() { recover() }()
+	select {
+	case c.ch <- v:
+		return nil
+	case <-th.in.stop:
+		return th.timeoutErr()
 	}
 }
 

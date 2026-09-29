@@ -69,7 +69,18 @@ type Interp struct {
 	pyOnce   sync.Once
 	vmMu     sync.Mutex
 	vmFail   []string // functions left to the interpreter (compile errors)
+
+	stop     chan struct{} // closed when --timeout fires
+	done     chan struct{} // closed when the run ends, to stop the watchdog
+	stopOnce sync.Once
+	doneOnce sync.Once
 }
+
+// maxCallDepth bounds recursion so that a very deep call stack panics with
+// R0018 instead of overflowing the Go goroutine stack. A Go stack overflow is
+// a fatal runtime error: it is not recoverable and would abort the process
+// (and any executable built with `pygo build`) with a raw traceback.
+const maxCallDepth = 10000
 
 // VMFallbacks lists the functions the bytecode compiler could not compile
 // (they ran on the interpreter), with the reason.
@@ -124,18 +135,44 @@ func New(prog *loader.Program, opt Options) *Interp {
 		rng:     rand.New(rand.NewSource(opt.Seed)),
 		modules: map[string]*Module{},
 		std:     map[string]*Module{},
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
 	}
 	if opt.Timeout > 0 {
 		in.deadline = time.Now().Add(opt.Timeout)
 	}
+	go in.watchdog()
 	in.initUniverse()
 	return in
 }
+
+// watchdog closes stop when --timeout fires. It always keeps a timer pending,
+// even without --timeout: a live timer prevents the Go runtime from treating a
+// program blocked on a channel as a deadlock and aborting with
+// "fatal error: all goroutines are asleep - deadlock!". With --timeout the
+// blocking operations then fail with R0012; without it they wait, as documented.
+func (in *Interp) watchdog() {
+	d := in.opt.Timeout
+	if d <= 0 {
+		d = time.Duration(1) << 62 // ~146 years
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		in.stopOnce.Do(func() { close(in.stop) })
+	case <-in.done:
+	}
+}
+
+// finish stops the watchdog. Called once the run is over.
+func (in *Interp) finish() { in.doneOnce.Do(func() { close(in.done) }) }
 
 // Flush writes buffered output.
 func (in *Interp) Flush() {
 	in.out.Flush()
 	in.errw.Flush()
+	in.finish()
 }
 
 // ---------- environments ----------
@@ -688,13 +725,20 @@ func (th *Thread) execFor(env *Env, s *ast.For) error {
 		return nil
 	case *Chan:
 		i := int64(0)
-		for v := range c.ch {
-			if stop, err := body(i, v); stop || err != nil {
-				return err
+		for {
+			select {
+			case v, ok := <-c.ch:
+				if !ok {
+					return nil
+				}
+				if stop, err := body(i, v); stop || err != nil {
+					return err
+				}
+				i++
+			case <-th.in.stop:
+				return th.timeoutErr()
 			}
-			i++
 		}
-		return nil
 	}
 	return th.panicAt(s.Iter.P(), PType, "iterate over List, Map, Str, Range (a..b) or Chan", "cannot iterate over %s", TypeName(it))
 }

@@ -404,6 +404,11 @@ func (c *Checker) expr1(fc *fnCtx, sc *scope, e ast.Expr, want *Type) *Type {
 				if t.K == KVoid {
 					c.errorf("E0301", p.Expr.P(), "", "interpolated expression has no value")
 				}
+				if p.Format != "" {
+					if msg, ok := ast.ValidFormatSpec(p.Format); !ok {
+						c.errorf("E0309", p.Expr.P(), "format spec: [[fill]<|>|^][0][width][.prec][f|e|x|X|b|o|%]", "%s", msg)
+					}
+				}
 			}
 		}
 		if want != nil && (want.K == KHtml || want.K == KSql) {
