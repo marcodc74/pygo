@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -77,4 +78,72 @@ fn main() -> ! uses crypto { print(try crypto.random_bytes(4)) }
 	if res.ExitCode != ExitPermission || !strings.Contains(res.Panic.Hint, "--allow crypto") {
 		t.Fatalf("got %+v", res.Panic)
 	}
+}
+
+// TestCryptoBounds checks the range guards on PBKDF2 and random_bytes.
+func TestCryptoBounds(t *testing.T) {
+	out, res := runSrc(t, `
+import "crypto"
+
+fn main() -> ! uses crypto {
+    print(try crypto.pbkdf2("p", salt: "s", iterations: 0, length: 32) catch e { e.code })
+    print(try crypto.pbkdf2("p", salt: "s", iterations: 10000001, length: 32) catch e { e.code })
+    print(try crypto.pbkdf2("p", salt: "s", iterations: 1, length: -1) catch e { e.code })
+    print(try crypto.pbkdf2("p", salt: "s", iterations: 1, length: 1048577) catch e { e.code })
+    print(try crypto.random_bytes(-1) catch e { e.code })
+    print(try crypto.random_bytes(1048577) catch e { e.code })
+    print((try crypto.random_bytes(0)).len())
+}
+`, "crypto")
+	if res.Status != "ok" {
+		t.Fatalf("status %s: %s\noutput: %s", res.Status, res.Describe(), out)
+	}
+	want := strings.TrimSpace(strings.Repeat("E_CRYPTO\n", 6) + "0")
+	if strings.TrimSpace(out) != want {
+		t.Fatalf("output mismatch\n--- got ---\n%s\n--- want ---\n%s", out, want)
+	}
+}
+
+// TestCryptoEqualLengths: different lengths and non-ASCII are handled without
+// an early exit or a panic.
+func TestCryptoEqualLengths(t *testing.T) {
+	expectOut(t, `
+import "crypto"
+
+fn main() {
+    print(crypto.equal("a", b: ""), crypto.equal("", b: "a"))
+    print(crypto.equal("caffè", b: "caffè"), crypto.equal("caffè", b: "caffe"))
+}
+`, `false false
+true false`)
+}
+
+// TestJWTAdversarial crafts tokens with Go so the edge cases where the
+// signature is valid but the header/payload are wrong still get exercised.
+func TestJWTAdversarial(t *testing.T) {
+	b64 := func(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+	sign := func(header, payload string) string {
+		h, p := b64(header), b64(payload)
+		return h + "." + p + "." + b64(string(hmacSHA256("k", h+"."+p)))
+	}
+	// every token must be rejected: `bad` returns true when verify fails
+	tokens := []string{
+		b64(`{"alg":"none","typ":"JWT"}`) + "." + b64(`{"sub":"ada"}`) + ".", // alg none, no signature
+		sign(`{"alg":"HS256"}`, `[1,2,3]`),                                   // valid sig, payload is an array
+		sign(`[]`, `{}`),                                                     // valid sig, header is an array
+		sign(`{"alg":"HS256"}`, `{`),                                         // valid sig, malformed payload
+		sign(`{"alg":"RS256"}`, `{"sub":"ada"}`),                             // valid sig, wrong alg
+		"a.b.c.d",                                                            // four parts
+		"a.b.***",                                                            // signature not base64
+		"a.b",                                                                // two parts
+		"",                                                                   // empty
+	}
+	var b strings.Builder
+	b.WriteString("import \"jwt\"\nfn bad(t: Str) -> Bool { return (jwt.verify_hs256(t, key: \"k\") catch e { {} }).is_empty() }\nfn main() {\n")
+	for _, tok := range tokens {
+		b.WriteString("\tprint(bad(\"" + tok + "\"))\n")
+	}
+	b.WriteString("}\n")
+	want := strings.TrimSpace(strings.Repeat("true\n", len(tokens)))
+	expectOut(t, b.String(), want)
 }
