@@ -3,11 +3,13 @@ package interp
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -152,7 +154,7 @@ func init() {
 			return th.httpDo(strings.ToUpper(a[0].(string)), a[1].(string), a[2].(string), a[3].(*Map), a[4].(int64))
 		},
 		"serve": func(th *Thread, _ Value, a []Value) (Value, error) {
-			return th.httpServe(a[0].(string), a[1], a[2].(int64))
+			return th.httpServe(a[0].(string), a[1], a[2].(int64), a[3])
 		},
 		"dispatch": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.httpDispatch(a[0].(*Struct), a[1].(*List), a[2].(*List))
@@ -477,16 +479,35 @@ func (th *Thread) httpDo(method, url, body string, headers *Map, timeoutMs int64
 	return th.httpResponse(int64(resp.StatusCode), string(b), h), nil
 }
 
-func (th *Thread) httpServe(addr string, handler Value, maxBody int64) (Value, error) {
+func (th *Thread) httpServe(addr string, handler Value, maxBody int64, tlsVal Value) (Value, error) {
 	if maxBody <= 0 {
 		return nil, perr(PArgs, "", "http.serve: max_body must be positive, got %d", maxBody)
 	}
 	h := th.httpHandler(handler, maxBody)
 	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	var cfg *tls.Config
+	if tlsVal != nil {
+		c, err := th.httpTLSConfig(tlsVal)
+		if err != nil {
+			return nil, err
+		}
+		cfg = c
+		srv.TLSConfig = c
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, th.fail("E_NET", "%v", err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	errc := make(chan error, 1)
-	go func() { errc <- srv.ListenAndServe() }()
+	go func() {
+		if cfg != nil {
+			errc <- srv.ServeTLS(ln, "", "")
+			return
+		}
+		errc <- srv.Serve(ln)
+	}()
 	select {
 	case err := <-errc:
 		if err != nil && err != http.ErrServerClosed {

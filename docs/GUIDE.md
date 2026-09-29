@@ -98,6 +98,7 @@ fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.d
 - The FIRST matching route wins; same path with another method → 405, no match → 404. Test handlers by calling them with an `http.Request{...}` literal.
 - Responses: `http.text/json/html(status, body: x)`, `http.redirect("/items")` (303), `http.Response{status: 200, body: b, headers: {...}, cookies: [http.Cookie{name: "s", value: v}]}` (cookies default to HttpOnly, Secure, SameSite=Lax). Request cookies: `req.cookies.get("s")`.
 - Bodies over `max_body` (serve argument, default 1 MiB) get 413.
+- TLS: `try http.serve(":8443", handler: h, tls: http.Tls{cert: "cert.pem", key: "key.pem"})` serves HTTPS (TLS 1.2+). The pair is re-read from disk when it changes, so a renewal needs no restart; a broken replacement keeps the last good certificate. A wrong path is an `E_TLS` failure before the port opens. Terminating TLS at a reverse proxy is also fine.
 - Middleware: `http.dispatch(req, routes: routes(), middleware: [http.request_id(), http.log_requests(), http.recover()])`. Built-ins: `request_id`, `log_requests`, `recover` (panic → 500), `timeout(ms)` (→ 503), `metrics` (counters by method+status, latency histogram, in-flight gauge); a custom one is `http.Middleware{name: "auth", apply: fn(next) => fn(req) { ... }}`. They run left-to-right (first is outermost) and may short-circuit without calling `next`; they also wrap 404/405.
 - Observability: serve `http.metrics_text()` (Prometheus format) at `/metrics`; `/healthz` and `/readyz` are plain routes for liveness/readiness. `http.tracing("service", endpoint: "http://localhost:4318")` adds OTLP/HTTP spans (`uses net`).
 
@@ -275,10 +276,11 @@ struct http.Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, h
 struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
 struct http.Route { method: Str, path: Str, handler: fn(Request) -> Response }
 struct http.Middleware { name: Str, apply: fn(fn(Request) -> Response) -> fn(Request) -> Response }
+struct http.Tls { cert: Str, key: Str }
 fn http.get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
-fn http.serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net
+fn http.serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576, tls: Tls? = nil) -> ! uses net
 fn http.dispatch(req: Request, routes: List[Route], middleware: List[Middleware] = []) -> Response
 fn http.recover() -> Middleware
 fn http.log_requests() -> Middleware

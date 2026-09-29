@@ -65,6 +65,37 @@ fn main() {
 `, "E0301")
 }
 
+// serve accepts an optional http.Tls: a wrong type or a missing field is caught.
+func TestServeTLSTypes(t *testing.T) {
+	expectCodes(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() -> ! uses net {
+    try http.serve(":8443", handler: h, tls: http.Tls{cert: "cert.pem", key: "key.pem"})
+}
+`)
+	expectCodes(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() -> ! uses net {
+    try http.serve(":8443", handler: h, tls: http.Tls{cert: "cert.pem"})
+}
+`, "E0602")
+	expectCodes(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() -> ! uses net {
+    try http.serve(":8443", handler: h, tls: "cert.pem")
+}
+`, "E0301")
+}
+
 // A named function used as a value brings its effects to the function
 // that takes it: routes() can hand assets to anyone who calls it.
 func TestFunctionValueEffects(t *testing.T) {

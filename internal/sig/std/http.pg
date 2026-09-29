@@ -13,13 +13,18 @@ struct Route { method: Str, path: Str, handler: fn(Request) -> Response }
 /// Pass a list to dispatch: they run left-to-right (the first is outermost) and may
 /// short-circuit by returning without calling next.
 struct Middleware { name: Str, apply: fn(fn(Request) -> Response) -> fn(Request) -> Response }
+/// TLS options for serve: PEM certificate and private-key file paths. The pair
+/// is re-read when its modification time or size changes, so a renewal needs no
+/// restart. A broken replacement keeps serving the last good certificate.
+struct Tls { cert: Str, key: Str }
 
 fn get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 fn post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 fn request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 /// Serve HTTP on addr (e.g. ":8080") until SIGINT/SIGTERM (graceful shutdown). handler runs concurrently.
 /// Request bodies over max_body bytes get 413 without calling the handler.
-fn serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net {}
+/// With tls, serve HTTPS on the same port, reloading the certificate from disk when it changes.
+fn serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576, tls: Tls? = nil) -> ! uses net {}
 /// Calls the handler of the FIRST route whose method and path match, with req.params set.
 /// A path that matches only with another method gives 405 (header allow), no match 404.
 /// middleware wraps the outcome (including 404/405).
