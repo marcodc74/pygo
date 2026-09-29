@@ -1,0 +1,73 @@
+import "os"
+import "sql"
+
+/// A row of the example table.
+struct Item {
+    id: Int
+    name: Str
+    price: Float
+}
+
+/// Create the table, dropping any previous one.
+fn init(conn: sql.Conn) -> ! uses sql {
+    let _ = try sql.exec(conn, text: sql"DROP TABLE IF EXISTS items")
+    let _ = try sql.exec(conn, text: sql"CREATE TABLE items (id serial PRIMARY KEY, name text NOT NULL, price numeric(10,2) NOT NULL)")
+}
+
+/// Insert one item and return its generated id (INSERT ... RETURNING).
+fn add(conn: sql.Conn, name: Str, price: Float) -> !Int uses sql {
+    let rows = try sql.query(conn, text: sql"INSERT INTO items (name, price) VALUES ($1, $2) RETURNING id", args: [name, price])
+    return int(rows[0]["id"])
+}
+
+/// Every item, decoded into Item: a missing or mistyped column is an E_SCHEMA error.
+fn items(conn: sql.Conn) -> !List[Item] uses sql {
+    return try sql.query_as(conn, text: sql"SELECT id, name, price FROM items ORDER BY id", schema: Item)
+}
+
+/// Connect, migrate, insert and read back. Set DATABASE_URL to point elsewhere.
+fn main() -> ! uses env, sql {
+    let dsn = os.env("DATABASE_URL") ?? "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
+    let conn = try sql.open(dsn)
+    try init(conn)
+    let id = try add(conn, name: "keyboard", price: 49.9)
+    print("inserted id ${id}")
+    for item in try items(conn) {
+        print(item.id, item.name, item.price)
+    }
+    sql.close(conn)
+}
+
+/// The error code of a failed open (a bad connection string never connects).
+fn open_code(dsn: Str) -> Str uses sql {
+    let _ = sql.open(dsn) catch e {
+        return e.code
+    }
+    return "ok"
+}
+
+test "a bad connection string fails with E_SQL" {
+    assert open_code("not a connection string") == "E_SQL"
+}
+
+test "open is lazy: it needs no server until the first query" {
+    let conn = try sql.open("postgres://user:pw@127.0.0.1:1/db?sslmode=disable")
+    assert type_of(conn) == "Conn"
+    sql.close(conn)
+}
+
+test "round trip (set PYGO_TEST_PG_DSN to run)" {
+    let dsn = os.env("PYGO_TEST_PG_DSN")
+    if dsn == nil {
+        return
+    }
+    let conn = try sql.open(dsn)
+    try init(conn)
+    let _ = try add(conn, name: "mouse", price: 19.5)
+    let list = try items(conn)
+    assert list.len() == 1
+    assert list[0].name == "mouse"
+    assert list[0].price == 19.5
+    let _ = try sql.exec(conn, text: sql"DROP TABLE items")
+    sql.close(conn)
+}

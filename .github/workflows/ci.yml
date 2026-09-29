@@ -55,6 +55,32 @@ jobs:
           go build -o "itest/pygo$ext" ./cmd/pygo
           PYGO_BIN="itest/pygo$ext" python integrations/pygo_tools.py
 
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pygo
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: pygo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pygo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: PostgreSQL integration test
+        run: go test ./internal/interp -run TestSQLPostgres -count=1 -v
+        env:
+          PYGO_TEST_PG_DSN: postgres://pygo:secret@localhost:5432/pygo?sslmode=disable
+
   dist:
     needs: test
     runs-on: ubuntu-latest

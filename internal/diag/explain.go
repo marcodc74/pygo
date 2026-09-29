@@ -71,7 +71,7 @@ var Explanations = map[string]Explanation{
 	"E0604": {Title: "variant arity", Detail: "A variant pattern must have one sub-pattern per field (use _ to ignore one)."},
 
 	"E0120": {Title: "unsupported foreign language", Detail: "extern blocks support Python only: extern python \"module\" { ... }."},
-	"E0121": {Title: "interpolation in sql literal", Detail: "A sql\"...\" literal is fixed query text: values never become SQL. Write a ? placeholder and pass the value in args, so it is sent separately from the query.", Wrong: "conn.query(sql\"SELECT * FROM t WHERE id = ${id}\")", Right: "conn.query(sql\"SELECT * FROM t WHERE id = ?\", args: [id])"},
+	"E0121": {Title: "interpolation in sql literal", Detail: "A sql\"...\" literal is fixed query text: values never become SQL. Write a $1, $2, ... placeholder and pass the value in args, so it is sent separately from the query.", Wrong: "sql.query(conn, text: sql\"SELECT * FROM t WHERE id = ${id}\")", Right: "sql.query(conn, text: sql\"SELECT * FROM t WHERE id = $1\", args: [id])"},
 	"E0610": {Title: "extern function not fallible", Detail: "A call into Python can always raise an exception, so every extern function and method must be declared -> !T.", Wrong: "extern python \"math\" { fn sqrt(x: Float) -> Float }", Right: "extern python \"math\" { fn sqrt(x: Float) -> !Float }"},
 	"E0611": {Title: "foreign object literal", Detail: "An extern type is a handle to an object that lives in Python: obtain it from an extern function, it cannot be built with a literal."},
 	"E0612": {Title: "extern method without self", Detail: "Methods declared inside an extern type take self as first parameter: type DataFrame { fn head(self, n: Int = 5) -> !DataFrame }."},

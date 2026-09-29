@@ -69,7 +69,7 @@ _SCHEMAS = [
                 "code": {"type": "string", "description": "Complete source of main.pg"},
                 "allow": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ["fs", "net", "env", "proc", "clock", "rand", "python"]},
+                    "items": {"type": "string", "enum": ["fs", "net", "env", "proc", "clock", "rand", "python", "crypto", "sql"]},
                     "description": "Capabilities the program needs (the host may refuse some)",
                 },
                 "args": {"type": "array", "items": {"type": "string"}, "description": "Command-line arguments"},

@@ -64,6 +64,9 @@ type Interp struct {
 	traceMu  sync.Mutex
 	traceRng *rand.Rand // OTLP trace/span ids, kept apart so rand.* stays stable
 	metrics  *httpMetrics
+	sqlMu    sync.Mutex
+	sqlSeq   int64
+	sqlConns map[int64]*sqlConn
 	modMu    sync.Mutex
 	modules  map[string]*Module
 	std      map[string]*Module
@@ -141,6 +144,7 @@ func New(prog *loader.Program, opt Options) *Interp {
 		metrics:  newHTTPMetrics(),
 		modules:  map[string]*Module{},
 		std:      map[string]*Module{},
+		sqlConns: map[int64]*sqlConn{},
 		stop:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
@@ -178,6 +182,7 @@ func (in *Interp) finish() { in.doneOnce.Do(func() { close(in.done) }) }
 func (in *Interp) Flush() {
 	in.out.Flush()
 	in.errw.Flush()
+	in.closeAllSQL()
 	in.finish()
 }
 

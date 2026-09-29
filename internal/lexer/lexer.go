@@ -453,7 +453,7 @@ func (l *Lexer) str() {
 		}
 		if c == '$' && l.peek(1) == '{' {
 			if prefix == "sql" {
-				l.Diags.Errorf("E0121", l.pos(), "write a ? placeholder and pass the value in args: [...]", "sql literals cannot contain interpolation")
+				l.Diags.Errorf("E0121", l.pos(), "write a $1, $2, ... placeholder and pass the value in args: [...]", "sql literals cannot contain interpolation")
 				l.advance()
 				l.interpolation()
 				buf.WriteRune('?')

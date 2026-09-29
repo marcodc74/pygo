@@ -70,7 +70,7 @@ let a = match s {
 - Patterns: `_`, `name`, literals, `1 | 2`, `lo..=hi`, `lo..hi`, `Enum.Variant(p, _)`, guards `if cond`. match must be exhaustive (all variants, or `_`).
 
 ## Effects (capabilities)
-Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python crypto`. Callers of effectful functions must declare them too, and so must a function that uses an effectful function as a value (callback, route handler). The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect. Hashing, HMAC, PBKDF2 and JWT are pure (no effect); only `crypto.random_bytes` needs the `crypto` grant.
+Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python crypto sql`. Callers of effectful functions must declare them too, and so must a function that uses an effectful function as a value (callback, route handler). The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect. Hashing, HMAC, PBKDF2 and JWT are pure (no effect); only `crypto.random_bytes` needs the `crypto` grant. Database access needs the `sql` grant.
 
 ## Concurrency
 `let t = spawn work(x)` → `Task[T]`; `try t.wait()`; `try wait_all(tasks)`. Channels: `let ch = chan(10)`, `ch.send(v)`, `ch.recv()` (T?, nil when closed), `ch.close()`, `for v in ch { }`. Lists/maps are thread-safe; prefer channels to shared state.
@@ -101,11 +101,14 @@ fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.d
 - Middleware: `http.dispatch(req, routes: routes(), middleware: [http.request_id(), http.log_requests(), http.recover()])`. Built-ins: `request_id`, `log_requests`, `recover` (panic → 500), `timeout(ms)` (→ 503), `metrics` (counters by method+status, latency histogram, in-flight gauge); a custom one is `http.Middleware{name: "auth", apply: fn(next) => fn(req) { ... }}`. They run left-to-right (first is outermost) and may short-circuit without calling `next`; they also wrap 404/405.
 - Observability: serve `http.metrics_text()` (Prometheus format) at `/metrics`; `/healthz` and `/readyz` are plain routes for liveness/readiness. `http.tracing("service", endpoint: "http://localhost:4318")` adds OTLP/HTTP spans (`uses net`).
 
+## SQL (PostgreSQL)
+`import "sql"`; `sql.open(dsn)` returns a `sql.Conn` handle and connects lazily on the first query. `sql.query(conn, text: sql"SELECT id FROM t WHERE id = $1", args: [id])` → `List[Map[Str, Any]]`; `sql.query_as(conn, text: sql"SELECT ...", schema: Row)` decodes each row into `Row` (E_SCHEMA on a mismatch); `sql.exec(conn, text: sql"UPDATE ...")` → affected rows `Int`. `?` placeholders are accepted and rewritten to `$1...`. A wrong DSN, a refused connection and a server error are all `E_SQL` failures. Everything needs `uses sql`.
+
 ## Tests
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.
 
 ## Modules
-`import "json"` (stdlib: json fs os http html time log math re proc rand crypto jwt), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
+`import "json"` (stdlib: json fs os http html time log math re proc rand crypto jwt sql), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
 
 ## Python libraries (extern)
 Declare exactly what you use; the checker validates calls like any Pygo function:

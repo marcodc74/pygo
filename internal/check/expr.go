@@ -179,7 +179,7 @@ func (c *Checker) mismatch(pos ast.Pos, got, want *Type, where string) {
 	case got.K == KStr && want.K == KHtml:
 		hint = `write markup as html"..." (values in ${} are escaped); html.raw(s) marks trusted text`
 	case got.K == KStr && want.K == KSql:
-		hint = `write the query as sql"..." with ? placeholders and pass the values in args: [...]`
+		hint = `write the query as sql"..." with $1..$n placeholders and pass the values in args: [...]`
 	case want.K == KStr:
 		hint = "convert with str(x) or interpolate \"${x}\""
 	case got.K == KFn && want.K == KFn && got.Fallible && !want.Fallible:

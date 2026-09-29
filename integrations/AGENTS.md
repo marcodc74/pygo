@@ -18,7 +18,7 @@ way to write each thing. Use only stdlib functions listed there.
 3. `pygo test --json FILE_OR_DIR`. Failed asserts report operand values.
 4. `pygo run --json --max-steps 10000000 --timeout 30s FILE`, adding
    `--allow CAPS` only for the capabilities the task needs
-   (`fs net env proc clock rand python crypto`).
+   (`fs net env proc clock rand python crypto sql`).
 5. `pygo fmt -w FILE` before finishing.
 
 Exit codes: 0 ok, 1 unhandled failure, 2 panic, 3 compile error,
