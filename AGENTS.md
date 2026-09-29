@@ -60,7 +60,7 @@ go test -bench . ./internal/interp/  # engine benchmarks on bench/*.pg
 
 - CLI exit codes are a public contract for agents: `0` ok, `1` unhandled failure,
   `2` panic, `3` compile error, `4` capability not granted.
-- Stdlib capabilities are the closed set `clock env fs net proc python rand`
+- Stdlib capabilities are the closed set `clock crypto env fs net proc python rand`
   (`internal/sig/sig.go`).
 - README.md is Italian; code, comments, `docs/*.md` and `internal/guide/guide.md`
   are English — don't translate between them.

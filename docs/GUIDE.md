@@ -70,7 +70,7 @@ let a = match s {
 - Patterns: `_`, `name`, literals, `1 | 2`, `lo..=hi`, `lo..hi`, `Enum.Variant(p, _)`, guards `if cond`. match must be exhaustive (all variants, or `_`).
 
 ## Effects (capabilities)
-Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python`. Callers of effectful functions must declare them too, and so must a function that uses an effectful function as a value (callback, route handler). The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
+Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python crypto`. Callers of effectful functions must declare them too, and so must a function that uses an effectful function as a value (callback, route handler). The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect. Hashing, HMAC, PBKDF2 and JWT are pure (no effect); only `crypto.random_bytes` needs the `crypto` grant.
 
 ## Concurrency
 `let t = spawn work(x)` → `Task[T]`; `try t.wait()`; `try wait_all(tasks)`. Channels: `let ch = chan(10)`, `ch.send(v)`, `ch.recv()` (T?, nil when closed), `ch.close()`, `for v in ch { }`. Lists/maps are thread-safe; prefer channels to shared state.
@@ -104,7 +104,7 @@ fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.d
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.
 
 ## Modules
-`import "json"` (stdlib: json fs os http html time log math re proc rand), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
+`import "json"` (stdlib: json fs os http html time log math re proc rand crypto jwt), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
 
 ## Python libraries (extern)
 Declare exactly what you use; the checker validates calls like any Pygo function:
@@ -239,6 +239,15 @@ fn done() -> Bool
 fn wait() -> !T
 ```
 
+### import "crypto"
+```
+fn crypto.sha256(data: Str) -> Str
+fn crypto.hmac_sha256(key: Str, data: Str) -> Str
+fn crypto.equal(a: Str, b: Str) -> Bool
+fn crypto.pbkdf2(password: Str, salt: Str, iterations: Int, length: Int) -> !Str
+fn crypto.random_bytes(n: Int) -> !Str uses crypto
+```
+
 ### import "fs"
 ```
 fn fs.read(path: Str) -> !Str uses fs
@@ -284,6 +293,12 @@ fn http.html(status: Int, body: Html) -> Response
 fn json.encode(value: Any, indent: Int = 0) -> Str
 fn json.decode(text: Str) -> !Any
 fn json.decode_as[T](text: Str, schema: Type[T]) -> !T
+```
+
+### import "jwt"
+```
+fn jwt.verify_hs256(token: Str, key: Str) -> !Map[Str, Any]
+fn jwt.sign_hs256(claims: Map[Str, Any], key: Str) -> !Str
 ```
 
 ### import "log"
