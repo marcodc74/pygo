@@ -527,9 +527,17 @@ func (th *Thread) selector(e *ast.Selector, x Value) (Value, error) {
 	kind := TypeName(x)
 	if impls, ok := methodImpls[kind]; ok {
 		if tmpl := builtinMethod(kind, name); tmpl != nil {
+			for i := range th.sel {
+				if e := &th.sel[i]; e.fn != nil && e.name == name && e.recv == x {
+					return e.fn, nil
+				}
+			}
 			b := *tmpl
 			b.Recv = x
-			return &b, nil
+			nb := &b
+			th.sel[th.selNext] = selEntry{recv: x, name: name, fn: nb}
+			th.selNext = (th.selNext + 1) & (len(th.sel) - 1)
+			return nb, nil
 		}
 		var names []string
 		for k := range impls {
@@ -657,6 +665,10 @@ func (th *Thread) callValue(fnv Value, pos []Value, named []namedArg, at ast.Pos
 
 // bindArgs maps positional and named arguments onto params.
 func (th *Thread) bindArgs(fname string, params []*ast.Param, pos []Value, named []namedArg, defEnv *Env) ([]Value, error) {
+	// fast path: exactly the positional arguments, nothing to bind
+	if len(named) == 0 && len(pos) == len(params) && !hasVariadic(params) {
+		return pos, nil
+	}
 	vals := make([]Value, len(params))
 	set := make([]bool, len(params))
 	pi := 0
@@ -762,13 +774,22 @@ func (th *Thread) callFunction(f *Function, self Value, pos []Value, named []nam
 			env.Define(p.Name, vals[i], false)
 		}
 	}
-	fr := &frame{name: f.Name, mod: f.Mod, pos: f.Pos}
+	var fr *frame
+	if n := len(th.frameFree); n > 0 {
+		fr = th.frameFree[n-1]
+		th.frameFree = th.frameFree[:n-1]
+		*fr = frame{name: f.Name, mod: f.Mod, pos: f.Pos}
+	} else {
+		fr = &frame{name: f.Name, mod: f.Mod, pos: f.Pos}
+	}
 	th.frames = append(th.frames, fr)
 	saveTry := th.tryDepth
 	th.tryDepth = 0
 	defer func() {
 		th.tryDepth = saveTry
 		th.frames = th.frames[:len(th.frames)-1]
+		fr.defers = nil
+		th.frameFree = append(th.frameFree, fr)
 	}()
 
 	for _, r := range f.Requires {

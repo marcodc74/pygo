@@ -215,7 +215,36 @@ type assertInfo struct {
 // runProto executes a compiled body. slots holds self and the arguments in
 // ParamSlots order (nil entries for the rest).
 func (th *Thread) runProto(f *Function, p *Proto, args []Value) (Value, error) {
-	buf := make([]Value, p.NumSlots+p.MaxStack+1)
+	n := p.NumSlots + p.MaxStack + 1
+	var buf []Value
+	base := -1
+	switch {
+	case th.asp+n <= len(th.arena):
+		base = th.asp
+		th.asp = base + n
+		buf = th.arena[base : base+n : base+n]
+	case th.asp == 0:
+		// no call is active: grow the arena safely (nothing references it)
+		size := len(th.arena) * 2
+		if size < n {
+			size = n
+		}
+		th.arena = make([]Value, size)
+		base = 0
+		th.asp = n
+		buf = th.arena[:n:n]
+	default:
+		// recursion deeper than the arena: a standalone buffer
+		buf = make([]Value, n)
+	}
+	if base >= 0 {
+		defer func() {
+			for i := base; i < base+n; i++ {
+				th.arena[i] = nil
+			}
+			th.asp = base
+		}()
+	}
 	slots := buf[:p.NumSlots:p.NumSlots]
 	for i, s := range p.ParamSlots {
 		if i < len(args) {
