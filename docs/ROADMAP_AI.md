@@ -40,7 +40,7 @@ Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees
 - **M4 — AI in the loop:** AI-1, AI-2.
 - **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
 - **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
-- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-5 shipped; SRV-6 is next).
+- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-6 shipped; SRV-7 is next).
 
 Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M7 makes the result
 deployable; M5 deepens the moat.
@@ -254,8 +254,8 @@ Goal: a generated service can face real traffic with the boring guarantees
 untyped Python. Breadth is delegated through typed interop; the language keeps
 the safety guarantees.
 
-SRV-1, SRV-2, SRV-3, SRV-4 and SRV-5 are **shipped**; SRV-6 is next and the
-rest are queued. Definition
+SRV-1, SRV-2, SRV-3, SRV-4, SRV-5 and SRV-6 are **shipped**; SRV-7 is next and
+the rest are queued. Definition
 of done for an open item: signatures in `internal/sig/std/`, a Go
 implementation, entries in `pygo guide` / `pygo explain` where relevant, tests
 on all three engines, and a worked example under `examples/`.
@@ -362,9 +362,23 @@ on all three engines, and a worked example under `examples/`.
   reverse-proxy alternative.
 - **Effort:** M. **Deps:** none.
 
-### SRV-6 · OpenAPI
+### SRV-6 · OpenAPI  `done`
 - Serve a spec generated from `http.Route` and, with INT-1, generate a typed
   client from a spec. (M)
+- **Shipped:** `http.openapi(routes, title, version, description, server)`
+  returns an OpenAPI 3.1 document (JSON) built from the routes: method and path
+  template, path parameters (from `{name}` / `{name...}`), and the optional
+  `summary`, `operation_id`, `tags` and `query` metadata. `body`/`response` name
+  a struct or enum and become JSON Schemas under `components.schemas` (objects
+  with `properties`/`required`, optionals allow null, enums as a `oneOf` of
+  `{variant, ...fields}` objects matching `json.decode_as`), with recursion
+  handled by `$ref`. The document is deterministic and can be served at
+  `/openapi.json`; an invalid route, query type or schema is a `R0015` panic.
+  Tests: a full document parsed back as JSON on all three engines, an empty
+  route list, a recursive type, the error cases, checker tests for the `Type[Any]`
+  body/response and `examples/openapi.pg`. Client generation from a spec is left
+  to INT-1.
+- **Effort:** M. **Deps:** none.
 
 ### SRV-7 · Multipart and streaming
 - `http.multipart(req)` for file uploads; SSE and WebSocket handlers. (M)

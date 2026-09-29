@@ -96,6 +96,33 @@ fn main() -> ! uses net {
 `, "E0301")
 }
 
+// openapi takes the route list and optional metadata; body and response must be
+// a struct or enum type (Type[Any]).
+func TestOpenAPITypes(t *testing.T) {
+	expectCodes(t, `
+import "http"
+
+struct Item { id: Int, name: Str }
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() {
+    let doc = http.openapi([http.Route{method: "GET", path: "/items", handler: h, body: Item, response: Item, query: {"limit": "Int"}}], title: "T")
+    print(doc.len())
+}
+`)
+	expectCodes(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() {
+    let doc = http.openapi([http.Route{method: "GET", path: "/items", handler: h, body: "no"}], title: "T")
+    print(doc.len())
+}
+`, "E0301")
+}
+
 // A named function used as a value brings its effects to the function
 // that takes it: routes() can hand assets to anyone who calls it.
 func TestFunctionValueEffects(t *testing.T) {
