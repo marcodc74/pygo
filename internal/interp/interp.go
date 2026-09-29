@@ -246,6 +246,24 @@ type Thread struct {
 	tryDepth int
 	pending  int64     // steps not yet added to Interp.steps (no step budget)
 	deadline time.Time // http.timeout middleware deadline (zero = none)
+
+	// frameFree recycles frame objects across calls (bounded by call depth).
+	frameFree []*frame
+	// arena backs the slots+stack of compiled calls, bump-allocated and reused
+	// (asp is the stack pointer; base -1 means a standalone buffer was used).
+	arena []Value
+	asp   int
+	// sel caches the last bound builtin methods, so tight loops like out.push(x)
+	// avoid a Bound allocation and the method-map lookups per call.
+	sel     [8]selEntry
+	selNext int
+}
+
+// selEntry is one slot of the Thread selector cache.
+type selEntry struct {
+	recv Value
+	name string
+	fn   *Builtin
 }
 
 func (in *Interp) newThread(mod *Module) *Thread {

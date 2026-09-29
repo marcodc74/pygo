@@ -74,7 +74,9 @@ quadrantChart
 
 > Scala qualitativa 0–10, non un benchmark. Python e TypeScript vincono
 > sull'ecosistema; Pygo vince su ciò che serve **dopo** che il codice è stato
-> generato: verificarlo ed eseguirlo senza rischi.
+> generato: verificarlo ed eseguirlo senza rischi. Pygo è una VM a bytecode
+> senza JIT: più lenta di Go e Rust, e per questo il punteggio di performance
+> resta onestamente basso.
 
 ## Come migliora la programmazione con l'IA
 
@@ -426,7 +428,9 @@ v0.2.
 - **Docker:** immagini costruite e provate (l'app risponde, lo shutdown è pulito, la sandbox blocca cicli infiniti e permessi mancanti).
 - **Kubernetes:** i manifest sono sintatticamente validi, ma non li ho applicati a un cluster reale.
 - **VM a bytecode**, motore predefinito. Compilatore e macchina virtuale propri di Pygo,
-  da 1,2 a 3,5 volte più veloce dell'interprete ad albero (`--engine tree`). Si può compilare in
+  da 1,2 a 3,5 volte più veloce dell'interprete ad albero (`--engine tree`). Le chiamate compilate
+  riusano buffer e frame per thread e il binding dei metodi: su `fib` le allocazioni scendono da
+  ~1,27M a ~0,64M e su merge-sort da ~2,09M a ~0,82M (memoria −40% e −60%). Si può compilare in
   un file `.pgc` (`pygo compile`) che `run` e `test` eseguono direttamente, e che `pygo build` include
   negli eseguibili. Ogni programma di test gira in tre modi (interprete, VM, VM da `.pgc`), che
   devono dare output, errori, trace e numero di passi identici. Dettagli in

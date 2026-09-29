@@ -90,6 +90,12 @@ These are `go test -bench . ./internal/interp/` on the programs in
 | `sort.pg` (merge sort, list operations) | 538 ms | 326 ms | 1.7x |
 | `json.pg` (stdlib-bound) | 45 ms | 38 ms | 1.2x |
 
+Compiled calls reuse a per-thread buffer for the slots and the operand stack,
+recycle frame objects, and cache builtin method bindings, so call-heavy code
+allocates far less. With `-benchmem`, `fib.pg` drops from about 1.27M to 0.64M
+allocations and `sort.pg` from about 2.09M to 0.82M (and their memory by roughly
+40% and 60%).
+
 Startup from `.pgc` skips parsing and checking. For a generated program of
 2,000 functions (28,000 lines), `pygo run app.pgc` starts in about 67 ms,
 against about 140 ms for `pygo run app.pg`. For small programs the
