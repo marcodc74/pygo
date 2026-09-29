@@ -1,0 +1,11 @@
+/// Lowercase SHA-256 digest of data, as hex.
+fn sha256(data: Str) -> Str {}
+/// Lowercase HMAC-SHA256 of data under key, as hex.
+fn hmac_sha256(key: Str, data: Str) -> Str {}
+/// Compares two strings in constant time (use it for MACs and tokens,
+/// never write `==` on a secret).
+fn equal(a: Str, b: Str) -> Bool {}
+/// PBKDF2-HMAC-SHA256, lowercase hex. length is in bytes; iterations >= 1.
+fn pbkdf2(password: Str, salt: Str, iterations: Int, length: Int) -> !Str {}
+/// n random bytes, lowercase hex. Deterministic under --seed, so replays agree.
+fn random_bytes(n: Int) -> !Str uses crypto {}

@@ -286,8 +286,9 @@ There are two kinds of error.
 
 ## 8. Effects (capabilities)
 
-The effects are `fs`, `net`, `env`, `proc`, `clock`, `rand` and `python`
-(calls into Python libraries, §14.1).
+The effects are `fs`, `net`, `env`, `proc`, `clock`, `rand`, `python`
+(calls into Python libraries, §14.1) and `crypto` (`crypto.random_bytes`).
+Hashing, HMAC, PBKDF2 and JWT signing/verification are pure and need no grant.
 
 - **Declaration**: a function that performs an effect directly, or calls a
   function that does, must declare it: `uses net, fs` (E0501). Declared but
@@ -303,7 +304,8 @@ The effects are `fs`, `net`, `env`, `proc`, `clock`, `rand` and `python`
     (R0010, exit code 4).
   - With no `--allow`, a program can only compute and print.
 - **Free operations**: `print`, `eprint`, `log.*`, `time.sleep`, `read_line`
-  and `os.args` need no grant.
+  and `os.args` need no grant, and neither do `crypto.{sha256, hmac_sha256,
+  equal, pbkdf2}` and `jwt.*` (pure crypto).
 
 ## 9. Concurrency
 
@@ -345,6 +347,8 @@ must be covered by unguarded arms, or there must be a final catch-all
 
 - Map iteration follows insertion order.
 - `rand` is seeded with 0 unless `--seed N` is given.
+- `crypto.random_bytes` draws from the same seeded generator, so replays
+  and every engine agree.
 - Wall-clock time is only reachable through the `clock` effect.
 - There is no uninitialized memory, integer wraparound or implicit
   conversion.
@@ -420,6 +424,8 @@ the checker, the runtime, `describe` and `guide`.
 | `re` | RE2 regular expressions |
 | `proc` | `run(cmd: List[Str])` without a shell (`uses proc`) |
 | `rand` | seeded, deterministic (`uses rand`) |
+| `crypto` | `sha256`, `hmac_sha256`, `equal` (constant time), `pbkdf2`; `random_bytes` (`uses crypto`, seeded) |
+| `jwt` | `sign_hs256`, `verify_hs256(token, key) -> !Map[Str, Any]`; pure, HS256 |
 
 ### 14.1 Python libraries (`extern python`)
 

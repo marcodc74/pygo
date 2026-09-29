@@ -297,7 +297,8 @@ Esempio di diagnostica (`pygo check --json`):
   Vedi [`examples/middleware.pg`](examples/middleware.pg).
 - **Libreria standard**: `json`, `fs`, `os`, `http` (client e server con
   shutdown graceful e routing), `html`, `time`, `log` (JSON su stderr), `math`, `re`, `proc`,
-  `rand`. Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
+  `rand`, `crypto` (hash, HMAC, PBKDF2, confronto a tempo costante) e `jwt`
+  (HS256). Le firme sono in [`internal/sig/std/`](internal/sig/std/), scritte in
   Pygo stesso: sono l'unica fonte di verità per checker, runtime e documentazione.
 
 ## Librerie Python
@@ -383,6 +384,7 @@ python integrations/agent.py --provider claude "scrivi un programma Pygo che ...
 
 ## Documentazione
 
+- [`README_AI.md`](README_AI.md): pagina di orientamento per un LLM che scrive o esegue Pygo (il ciclo check→test→run, i comandi, la sicurezza, esempi).
 - [`docs/LLM.md`](docs/LLM.md): come usare Pygo con i vari LLM, dalle chat alle CLI alle API.
 - [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md): il piano per un linguaggio AI-native (milestone, ROI, criteri di accettazione).
 - [`docs/SPEC.md`](docs/SPEC.md): specifica completa del linguaggio.
@@ -435,7 +437,7 @@ v0.2.
   negli eseguibili. Ogni programma di test gira in tre modi (interprete, VM, VM da `.pgc`), che
   devono dare output, errori, trace e numero di passi identici. Dettagli in
   [`docs/BYTECODE.md`](docs/BYTECODE.md).
-- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`) e observability: `/metrics` in formato Prometheus (counter per status, istogramma di latenza, gauge in-flight), sonde `/healthz` e `/readyz`, span OTLP/HTTP con `http.tracing`.
+- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`); observability (`/metrics` in formato Prometheus, istogramma di latenza, gauge in-flight, sonde `/healthz` e `/readyz`, span OTLP/HTTP con `http.tracing`); auth senza dipendenze (`crypto`: SHA-256, HMAC, PBKDF2, confronto a tempo costante; `jwt` HS256).
 - **Integrazione con gli LLM** ([`docs/LLM.md`](docs/LLM.md)):
   - `AGENTS.md` e una skill per Claude Code;
   - tool e agente per le API di Claude, OpenAI, Gemini e modelli locali. Li ho provati con gli SDK reali e risposte simulate, non contro le API vere.
@@ -452,16 +454,15 @@ gantt
     section Rilasciato
     Linguaggio, checker, stdlib        :done, 2025-06-01, 2026-03-01
     VM a bytecode, agenti, deploy      :done, 2026-03-01, 2026-09-01
-    Middleware e observability (SRV-1/3) :done, 2026-09-01, 2026-11-01
+    Middleware, crypto, JWT, observability (SRV-1/2/3) :done, 2026-09-01, 2026-11-01
     section In corso
-    Auth crypto e JWT (SRV-2)          :active, 2026-09-01, 2027-01-01
-    OpenAPI e servizi di produzione    :2026-10-01, 2027-03-01
+    OpenAPI, extern sql, TLS (SRV-4/5/6) :active, 2026-11-01, 2027-03-01
     section Dopo
     Package manager, WASM, LSP         :2027-03-01, 2027-12-01
     Record/replay, contratti dai test  :2027-09-01, 2028-06-01
 ```
 
-- **Prossimo — servizi di produzione (M7):** auth `crypto`/`jwt` in review (`SRV-2`, PR #14); poi `extern sql`, TLS, OpenAPI, multipart/streaming, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
+- **Prossimo — servizi di produzione (M7):** `extern sql` (`SRV-4`), TLS, OpenAPI, multipart/streaming, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
 - **Piattaforma:** firma Authenticode dei binari Windows, backend WebAssembly, LSP, package manager, `select` su più canali, effetti per le funzioni di ordine superiore, conservare i commenti in `fmt`, trait e interfacce.
 - **Verso l'IA nativa (M1–M6):** constrained decoding dalla grammatica, contesto selezionato a budget, record/replay degli effetti, contratti generati dagli esempi, correzione con prove (property test e fuzzing).
 

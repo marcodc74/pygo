@@ -1,0 +1,60 @@
+import "crypto"
+import "jwt"
+
+/// Not a real secret: this example signs tokens deterministically.
+let SECRET = "dev-secret-not-for-production"
+
+/// PBKDF2-HMAC-SHA256 password hash, lowercase hex.
+fn hash_password(password: Str, salt: Str) -> !Str {
+    return try crypto.pbkdf2(password, salt: salt, iterations: 10000, length: 32)
+}
+
+/// A random nonce for session ids (the `crypto` capability).
+fn nonce() -> !Str uses crypto {
+    return try crypto.random_bytes(16)
+}
+
+/// Issues an HS256 token (a JSON claims map) for a user.
+fn issue(sub: Str) -> !Str {
+    return try jwt.sign_hs256({"sub": sub, "role": "admin"}, key: SECRET)
+}
+
+/// Verifies a token and returns its claims; a bad signature fails.
+fn authenticate(token: Str) -> !Map[Str, Any] {
+    return try jwt.verify_hs256(token, key: SECRET)
+}
+
+fn main() -> ! {
+    let token = try issue("ada")
+    let claims = try authenticate(token)
+    print("token:", token)
+    print("sub:", claims["sub"], "role:", claims["role"])
+}
+
+test "hashing and constant-time comparison" {
+    assert crypto.sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    let mac = crypto.hmac_sha256("key", data: "message")
+    assert crypto.equal(mac, b: crypto.hmac_sha256("key", data: "message"))
+    assert not crypto.equal(mac, b: crypto.hmac_sha256("key", data: "messagE"))
+}
+
+test "password hashing is salted" {
+    let a = try hash_password("hunter2", salt: "user-1")
+    assert a.len() == 64
+    assert a == try hash_password("hunter2", salt: "user-1")
+    assert a != try hash_password("hunter2", salt: "user-2")
+}
+
+test "JWT round-trips and rejects tampering" {
+    let token = try issue("ada")
+    let claims = try authenticate(token)
+    assert claims["sub"] == "ada"
+    assert claims["role"] == "admin"
+    let bits = token.split(".")
+    let forged = "${bits[0]}.${bits[1]}.AAAA"
+    assert (authenticate(forged) catch e { {} }).is_empty()
+}
+
+test "nonce is hex" {
+    assert (try nonce()).len() == 32
+}
