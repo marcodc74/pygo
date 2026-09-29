@@ -176,7 +176,7 @@ func init() {
 			return th.in.metricsText(), nil
 		},
 		"tracing": func(th *Thread, _ Value, a []Value) (Value, error) {
-			return th.mwTracing(a[0].(string), a[1].(string)), nil
+			return th.mwTracing(a[0].(string), a[1].(string))
 		},
 		"static": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.httpStatic(a[0].(*Struct), a[1].(string))

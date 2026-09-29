@@ -141,7 +141,11 @@ func (in *Interp) newSpanIDs() (string, string) {
 }
 
 // mwTracing exports one OTLP/HTTP span per request.
-func (th *Thread) mwTracing(service, endpoint string) *Struct {
+func (th *Thread) mwTracing(service, endpoint string) (Value, error) {
+	if _, ok := otlpURL(endpoint); !ok {
+		return nil, perr(PArgs, `pass an http(s) base URL, e.g. http.tracing("svc", endpoint: "http://localhost:4318")`,
+			"http.tracing: invalid endpoint %q", endpoint)
+	}
 	return th.httpMiddleware("tracing", func(th *Thread, next Value, req *Struct) (Value, error) {
 		traceID, spanID := th.in.newSpanIDs()
 		start := time.Now()
@@ -154,15 +158,28 @@ func (th *Thread) mwTracing(service, endpoint string) *Struct {
 		}
 		th.exportSpan(service, endpoint, traceID, spanID, Str(field(req, "method")), Str(field(req, "path")), status, start, time.Now(), err != nil)
 		return v, err
-	})
+	}), nil
+}
+
+// otlpURL turns a base endpoint into the OTLP/HTTP traces URL. It accepts a
+// full .../v1/traces URL too, and reports whether the endpoint is usable.
+func otlpURL(endpoint string) (string, bool) {
+	e := strings.TrimRight(endpoint, "/")
+	if e == "" || (!strings.HasPrefix(e, "http://") && !strings.HasPrefix(e, "https://")) {
+		return "", false
+	}
+	if strings.HasSuffix(e, "/v1/traces") {
+		return e, true
+	}
+	return e + "/v1/traces", true
 }
 
 // exportSpan POSTs one span to endpoint as OTLP/HTTP JSON. Export failures are
 // logged and never break the request.
 func (th *Thread) exportSpan(service, endpoint, traceID, spanID, method, path string, status int64, start, end time.Time, failed bool) {
-	url := endpoint
-	if !strings.HasSuffix(url, "/v1/traces") {
-		url = strings.TrimRight(url, "/") + "/v1/traces"
+	url, ok := otlpURL(endpoint)
+	if !ok {
+		return
 	}
 	body := otlpPayload(service, traceID, spanID, method, path, status, start, end, failed)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))

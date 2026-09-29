@@ -151,6 +151,29 @@ func TestMetricsMiddlewareRecords(t *testing.T) {
 	}
 }
 
+func TestOTLPURL(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"http://localhost:4318", "http://localhost:4318/v1/traces", true},
+		{"http://localhost:4318/", "http://localhost:4318/v1/traces", true},
+		{"http://localhost:4318/v1/traces", "http://localhost:4318/v1/traces", true},
+		{"https://collector.example/v1/traces", "https://collector.example/v1/traces", true},
+		{"", "", false},
+		{"localhost:4318", "", false},
+		{"/v1/traces", "", false},
+		{"ftp://host", "", false},
+	}
+	for _, c := range cases {
+		got, ok := otlpURL(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("otlpURL(%q) = (%q, %v), want (%q, %v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestTracingExport(t *testing.T) {
 	var mu sync.Mutex
 	var paths []string
