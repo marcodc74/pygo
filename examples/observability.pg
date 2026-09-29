@@ -1,0 +1,46 @@
+import "http"
+
+/// Liveness and readiness probes, the metrics endpoint and one API route.
+fn routes() -> List[http.Route] {
+    return [
+        http.Route{method: "GET", path: "/healthz", handler: fn(req) => http.text(200, body: "ok")},
+        http.Route{method: "GET", path: "/readyz", handler: fn(req) => http.text(200, body: "ready")},
+        http.Route{method: "GET", path: "/items", handler: fn(req) => http.json(200, body: [{"id": 1, "name": "keyboard"}])},
+        http.Route{method: "GET", path: "/metrics", handler: fn(req) => http.text(200, body: http.metrics_text())},
+    ]
+}
+
+/// Prometheus metrics, request ids, structured logs and panic recovery around
+/// every handler. To export OTLP spans too, add
+/// `http.tracing("catalog", endpoint: "http://localhost:4318")` (needs `net`).
+fn stack() -> List[http.Middleware] {
+    return [http.request_id(), http.metrics(), http.log_requests(), http.recover()]
+}
+
+fn handle(req: http.Request) -> http.Response => http.dispatch(req, routes: routes(), middleware: stack())
+
+fn get(path: Str) -> http.Response {
+    return http.dispatch(
+        http.Request{method: "GET", path: path, query: {}, headers: {}, body: ""},
+        routes: routes(),
+        middleware: [http.metrics()],
+    )
+}
+
+fn main() -> ! uses net {
+    try http.serve(":8080", handler: handle)
+}
+
+test "metrics count requests by status" {
+    assert get("/items").status == 200
+    assert get("/nope").status == 404
+    let text = http.metrics_text()
+    assert text.contains("pygo_http_requests_total{method=\"GET\",status=\"200\"}")
+    assert text.contains("pygo_http_requests_total{method=\"GET\",status=\"404\"}")
+    assert text.contains("pygo_http_request_duration_seconds_count")
+}
+
+test "liveness and readiness probes" {
+    assert handle(http.Request{method: "GET", path: "/healthz", query: {}, headers: {}, body: ""}).body == "ok"
+    assert handle(http.Request{method: "GET", path: "/readyz", query: {}, headers: {}, body: ""}).body == "ready"
+}

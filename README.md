@@ -435,7 +435,7 @@ v0.2.
   negli eseguibili. Ogni programma di test gira in tre modi (interprete, VM, VM da `.pgc`), che
   devono dare output, errori, trace e numero di passi identici. Dettagli in
   [`docs/BYTECODE.md`](docs/BYTECODE.md).
-- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`), pronto per i servizi generati.
+- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`) e observability: `/metrics` in formato Prometheus (counter per status, istogramma di latenza, gauge in-flight), sonde `/healthz` e `/readyz`, span OTLP/HTTP con `http.tracing`.
 - **Integrazione con gli LLM** ([`docs/LLM.md`](docs/LLM.md)):
   - `AGENTS.md` e una skill per Claude Code;
   - tool e agente per le API di Claude, OpenAI, Gemini e modelli locali. Li ho provati con gli SDK reali e risposte simulate, non contro le API vere.
@@ -452,6 +452,7 @@ gantt
     section Rilasciato
     Linguaggio, checker, stdlib        :done, 2025-06-01, 2026-03-01
     VM a bytecode, agenti, deploy      :done, 2026-03-01, 2026-09-01
+    Middleware e observability (SRV-1/3) :done, 2026-09-01, 2026-11-01
     section In corso
     Auth crypto e JWT (SRV-2)          :active, 2026-09-01, 2027-01-01
     OpenAPI e servizi di produzione    :2026-10-01, 2027-03-01
@@ -460,7 +461,7 @@ gantt
     Record/replay, contratti dai test  :2027-09-01, 2028-06-01
 ```
 
-- **Prossimo — servizi di produzione (M7):** `crypto` e `jwt` tipizzati senza `python` (`SRV-2`), OpenAPI, `extern sql`, TLS, metriche, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
+- **Prossimo — servizi di produzione (M7):** auth `crypto`/`jwt` in review (`SRV-2`, PR #14); poi `extern sql`, TLS, OpenAPI, multipart/streaming, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
 - **Piattaforma:** firma Authenticode dei binari Windows, backend WebAssembly, LSP, package manager, `select` su più canali, effetti per le funzioni di ordine superiore, conservare i commenti in `fmt`, trait e interfacce.
 - **Verso l'IA nativa (M1–M6):** constrained decoding dalla grammatica, contesto selezionato a budget, record/replay degli effetti, contratti generati dagli esempi, correzione con prove (property test e fuzzing).
 
