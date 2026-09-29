@@ -40,7 +40,7 @@ Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees
 - **M4 — AI in the loop:** AI-1, AI-2.
 - **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
 - **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
-- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-4 shipped; SRV-5 is next).
+- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-5 shipped; SRV-6 is next).
 
 Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M7 makes the result
 deployable; M5 deepens the moat.
@@ -254,8 +254,8 @@ Goal: a generated service can face real traffic with the boring guarantees
 untyped Python. Breadth is delegated through typed interop; the language keeps
 the safety guarantees.
 
-SRV-1, SRV-2, SRV-3 and SRV-4 are **shipped**; SRV-5 is next and the rest are
-queued. Definition
+SRV-1, SRV-2, SRV-3, SRV-4 and SRV-5 are **shipped**; SRV-6 is next and the
+rest are queued. Definition
 of done for an open item: signatures in `internal/sig/std/`, a Go
 implementation, entries in `pygo guide` / `pygo explain` where relevant, tests
 on all three engines, and a worked example under `examples/`.
@@ -347,9 +347,20 @@ on all three engines, and a worked example under `examples/`.
   `examples/sql.pg`.
 - **Effort:** L. **Deps:** none.
 
-### SRV-5 · TLS
+### SRV-5 · TLS  `done`
 - `http.serve(addr, handler, tls: ...)` with a certificate path, or a documented
   reverse-proxy recipe; certificate reload without restart. (M)
+- **Shipped:** `http.Tls{cert, key}` passed as the optional `tls:` argument of
+  `http.serve`; HTTPS on the same port via `crypto/tls` (TLS 1.2 floor, HTTP/2
+  negotiated), with the PEM pair re-read from disk whenever its modification
+  time or size changes, so a renewal needs no restart. A broken replacement keeps
+  the last good certificate; an unreadable path is an `E_TLS` failure before the
+  port binds. Tests: the reloader (renewal, broken replacement, missing files),
+  an end-to-end HTTPS server that swaps the certificate between requests, a TLS
+  1.1 client refused by the floor, the `E_TLS` failure on all three engines and
+  checker tests for the argument; `docs/SPEC.md` §14.3 documents the
+  reverse-proxy alternative.
+- **Effort:** M. **Deps:** none.
 
 ### SRV-6 · OpenAPI
 - Serve a spec generated from `http.Route` and, with INT-1, generate a typed

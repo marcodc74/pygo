@@ -417,7 +417,7 @@ the checker, the runtime, `describe` and `guide`.
 | `json` | `encode`, `decode`, `decode_as(text, schema: T)` (typed validation) |
 | `fs` | `read`, `write`, `append`, `exists`, `list`, `remove`, `mkdir` (`uses fs`) |
 | `os` | `args`, `env` (`uses env`), `exit`, `platform`, `cwd` |
-| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM and a body limit; `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`, `metrics`, `tracing`), `metrics_text` (Prometheus exposition), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
+| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM, a body limit and optional `tls: http.Tls` (HTTPS, certificate reload); `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`, `metrics`, `tracing`), `metrics_text` (Prometheus exposition), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
 | `html` | `raw(text)`: trusted markup without escaping (§14.2) |
 | `time` | `now`, `now_ms`, `iso` (`uses clock`), `sleep` |
 | `log` | `debug`, `info`, `warn`, `error`: JSON lines on stderr |
@@ -569,6 +569,16 @@ read whole into memory.
 `application/x-www-form-urlencoded` body (the first value of each field)
 and fails with `E_FORM` on another content type or malformed input.
 `http.redirect(location, status: 303)` accepts 301, 302, 303, 307 and 308.
+
+**TLS.** `http.serve(addr, handler: f, tls: http.Tls{cert: "cert.pem", key:
+"key.pem"})` serves HTTPS on the same port. The certificate and key are
+PEM files read when the server starts (a bad path or a malformed pair is
+an `E_TLS` failure before the port binds) and re-read on every handshake
+whose modification time or size differs from the cached one, so a renewal
+takes effect without a restart; if the replacement cannot be loaded, the
+last good certificate keeps being served. TLS 1.2 is the floor, and HTTP/2
+is negotiated automatically when the client offers it. Terminating TLS at
+a reverse proxy remains a valid alternative.
 
 ### 14.4 SQL (PostgreSQL)
 

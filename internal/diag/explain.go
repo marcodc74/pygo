@@ -61,8 +61,8 @@ var Explanations = map[string]Explanation{
 	"W0404": {Title: "nothing can fail", Detail: "try/catch is applied to an expression that cannot fail."},
 	"E0405": {Title: "invalid fail value", Detail: "fail takes an Error (error(\"msg\", code: \"E_X\")) or a Str."},
 
-	"E0501": {Title: "undeclared effect", Detail: "The function performs an effect (fs, net, env, proc, clock, rand) without declaring it in 'uses'. Effects are capabilities: the runner must grant them with --allow.", Wrong: "fn load() -> !Str { return try fs.read(\"a\") }", Right: "fn load() -> !Str uses fs { return try fs.read(\"a\") }"},
-	"E0502": {Title: "unknown effect", Detail: "Effects are: clock, env, fs, net, proc, rand."},
+	"E0501": {Title: "undeclared effect", Detail: "The function performs an effect (clock, crypto, env, fs, net, proc, python, rand, sql) without declaring it in 'uses'. Effects are capabilities: the runner must grant them with --allow.", Wrong: "fn load() -> !Str { return try fs.read(\"a\") }", Right: "fn load() -> !Str uses fs { return try fs.read(\"a\") }"},
+	"E0502": {Title: "unknown effect", Detail: "Effects are: clock, crypto, env, fs, net, proc, python, rand, sql."},
 	"W0503": {Title: "unused effect", Detail: "A declared effect is never used; remove it (least privilege)."},
 
 	"E0601": {Title: "unknown struct field", Detail: "The struct literal names a field that does not exist."},
