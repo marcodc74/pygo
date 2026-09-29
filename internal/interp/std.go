@@ -180,6 +180,9 @@ func init() {
 		"tracing": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.mwTracing(a[0].(string), a[1].(string))
 		},
+		"openapi": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.httpOpenAPI(a[0].(*List), a[1].(string), a[2].(string), a[3].(string), a[4].(string))
+		},
 		"static": func(th *Thread, _ Value, a []Value) (Value, error) {
 			return th.httpStatic(a[0].(*Struct), a[1].(string))
 		},

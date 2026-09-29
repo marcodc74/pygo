@@ -417,7 +417,7 @@ the checker, the runtime, `describe` and `guide`.
 | `json` | `encode`, `decode`, `decode_as(text, schema: T)` (typed validation) |
 | `fs` | `read`, `write`, `append`, `exists`, `list`, `remove`, `mkdir` (`uses fs`) |
 | `os` | `args`, `env` (`uses env`), `exit`, `platform`, `cwd` |
-| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM, a body limit and optional `tls: http.Tls` (HTTPS, certificate reload); `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`, `metrics`, `tracing`), `metrics_text` (Prometheus exposition), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
+| `http` | `get`, `post`, `request` (`uses net`); `serve` with graceful shutdown on SIGTERM, a body limit and optional `tls: http.Tls` (HTTPS, certificate reload); `dispatch` (routes with path parameters) and middleware (`request_id`, `log_requests`, `recover`, `timeout`, `metrics`, `tracing`), `metrics_text` (Prometheus exposition), `openapi` (OpenAPI 3.1 from the routes), `static` (`uses fs`), `form`, `redirect`, cookies; `text`, `json`, `html` helpers (§14.3) |
 | `html` | `raw(text)`: trusted markup without escaping (§14.2) |
 | `time` | `now`, `now_ms`, `iso` (`uses clock`), `sleep` |
 | `log` | `debug`, `info`, `warn`, `error`: JSON lines on stderr |
@@ -579,6 +579,21 @@ takes effect without a restart; if the replacement cannot be loaded, the
 last good certificate keeps being served. TLS 1.2 is the floor, and HTTP/2
 is negotiated automatically when the client offers it. Terminating TLS at
 a reverse proxy remains a valid alternative.
+
+**OpenAPI.** `http.openapi(routes, title: "Catalog", version: "1.0.0",
+description: "", server: "")` returns an OpenAPI 3.1 document as JSON. Each
+`http.Route` becomes one operation: the method and path template come from
+the route (`{name}` and a final `{name...}`, rendered as `{name}`), path
+parameters are derived from it, and the optional `summary`, `operation_id`,
+`tags` and `query` (a map from query-parameter name to `Int`, `Float`, `Str`
+or `Bool`) describe it further. `body` and `response` name a struct or enum
+type and become JSON Schemas under `components.schemas` (a collection is
+described by wrapping it in a named struct). Structs map to objects with
+`properties` and `required` (fields with a default or an optional type are
+not required), optionals allow `null`, and enums map to a `oneOf` of
+`{variant, ...fields}` objects, matching `json.decode_as`. The document is
+deterministic, so it can be diffed and served at `/openapi.json`. An invalid
+route, query type or schema is a panic (R0015), like `http.dispatch`.
 
 ### 14.4 SQL (PostgreSQL)
 

@@ -1,0 +1,57 @@
+import "http"
+
+/// One row of the catalog.
+struct Item {
+    id: Int
+    name: Str
+    price: Float
+    tags: List[Str] = []
+}
+
+/// A page of items, the response of a collection route.
+struct ItemPage {
+    items: List[Item]
+    total: Int
+}
+
+fn handle(req: http.Request) -> http.Response => http.json(200, body: [])
+
+/// The API surface. The metadata and the schemas flow into the OpenAPI document.
+fn routes() -> List[http.Route] {
+    return [
+        http.Route{method: "GET", path: "/items", handler: handle, summary: "List items", tags: ["catalog"], query: {"limit": "Int", "q": "Str"}, response: ItemPage},
+        http.Route{method: "GET", path: "/items/{id}", handler: handle, response: Item},
+        http.Route{method: "POST", path: "/items", handler: handle, body: Item, response: Item},
+    ]
+}
+
+/// The OpenAPI 3.1 document; serve it at /openapi.json so a viewer can render it.
+fn spec() -> Str {
+    return http.openapi(routes(), title: "Catalog API", version: "1.0.0", description: "Items you can browse and add", server: "https://api.example.com")
+}
+
+fn main() {
+    print(spec())
+}
+
+test "the document is OpenAPI 3.1 with the declared info" {
+    let doc = spec()
+    assert doc.contains("\"openapi\": \"3.1.0\"")
+    assert doc.contains("\"title\": \"Catalog API\"")
+    assert doc.contains("\"url\": \"https://api.example.com\"")
+}
+
+test "paths, methods and parameters come from the routes" {
+    let doc = spec()
+    assert doc.contains("\"/items/{id}\"")
+    assert doc.contains("\"operationId\": \"getItemsId\"")
+    assert doc.contains("\"in\": \"path\"")
+    assert doc.contains("\"in\": \"query\"")
+}
+
+test "the request and response schemas come from the declared types" {
+    let doc = spec()
+    assert doc.contains("\"$ref\": \"#/components/schemas/Item\"")
+    assert doc.contains("\"$ref\": \"#/components/schemas/ItemPage\"")
+    assert doc.contains("\"required\"")
+}

@@ -8,7 +8,20 @@ struct Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, http_o
 struct Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
 /// A route for dispatch. method: GET (also answers HEAD), POST, PUT, PATCH, DELETE, HEAD or OPTIONS.
 /// path: literal segments, {name} (one segment) and a final {name...} (the rest of the path).
-struct Route { method: Str, path: Str, handler: fn(Request) -> Response }
+/// summary, operation_id and tags document the operation in http.openapi.
+/// query maps a query parameter name to its type: "Int", "Float", "Str" or "Bool".
+/// body and response are the request and 200-response schemas (a struct or enum type).
+struct Route {
+    method: Str
+    path: Str
+    handler: fn(Request) -> Response
+    summary: Str = ""
+    operation_id: Str = ""
+    tags: List[Str] = []
+    query: Map[Str, Str] = {}
+    body: Type[Any]? = nil
+    response: Type[Any]? = nil
+}
 /// A middleware wraps a handler: apply(next) returns the handler to run instead.
 /// Pass a list to dispatch: they run left-to-right (the first is outermost) and may
 /// short-circuit by returning without calling next.
@@ -44,6 +57,10 @@ fn metrics_text() -> Str {}
 /// Middleware that exports one OTLP/HTTP span per request to endpoint (a base URL,
 /// or a full .../v1/traces URL). Trace and span ids are reproducible under --seed.
 fn tracing(service: Str, endpoint: Str) -> Middleware uses net {}
+/// OpenAPI 3.1 document (JSON) for routes: one operation per route, with path and
+/// query parameters and, when given, JSON Schemas for body and response built from
+/// their struct/enum types. Serve it at /openapi.json and render it with any viewer.
+fn openapi(routes: List[Route], title: Str, version: Str = "1.0.0", description: Str = "", server: Str = "") -> Str {}
 /// Serves the file req.params["path"] (route "/static/{path...}") from dir, with its content type.
 /// Hidden files (.env), ".." and symlinks leading outside dir give 404.
 fn static(req: Request, dir: Str) -> Response uses fs {}

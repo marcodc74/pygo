@@ -99,6 +99,7 @@ fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.d
 - Responses: `http.text/json/html(status, body: x)`, `http.redirect("/items")` (303), `http.Response{status: 200, body: b, headers: {...}, cookies: [http.Cookie{name: "s", value: v}]}` (cookies default to HttpOnly, Secure, SameSite=Lax). Request cookies: `req.cookies.get("s")`.
 - Bodies over `max_body` (serve argument, default 1 MiB) get 413.
 - TLS: `try http.serve(":8443", handler: h, tls: http.Tls{cert: "cert.pem", key: "key.pem"})` serves HTTPS (TLS 1.2+). The pair is re-read from disk when it changes, so a renewal needs no restart; a broken replacement keeps the last good certificate. A wrong path is an `E_TLS` failure before the port opens. Terminating TLS at a reverse proxy is also fine.
+- OpenAPI: `http.openapi(routes(), title: "Catalog API", version: "1.0.0")` returns an OpenAPI 3.1 document (JSON): one operation per route with path and query parameters and JSON Schemas for `body:`/`response:`. A route may add `summary`, `operation_id`, `tags`, `query: {"limit": "Int"}`, `body: Item` and `response: ItemPage` (a struct or enum type); wrap a collection in a named struct. Serve the string at `/openapi.json`.
 - Middleware: `http.dispatch(req, routes: routes(), middleware: [http.request_id(), http.log_requests(), http.recover()])`. Built-ins: `request_id`, `log_requests`, `recover` (panic → 500), `timeout(ms)` (→ 503), `metrics` (counters by method+status, latency histogram, in-flight gauge); a custom one is `http.Middleware{name: "auth", apply: fn(next) => fn(req) { ... }}`. They run left-to-right (first is outermost) and may short-circuit without calling `next`; they also wrap 404/405.
 - Observability: serve `http.metrics_text()` (Prometheus format) at `/metrics`; `/healthz` and `/readyz` are plain routes for liveness/readiness. `http.tracing("service", endpoint: "http://localhost:4318")` adds OTLP/HTTP spans (`uses net`).
 
@@ -274,7 +275,7 @@ fn html.raw(text: Str) -> Html
 struct http.Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str, params: Map[Str, Str] = {}, cookies: Map[Str, Str] = {} }
 struct http.Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, http_only: Bool = true, secure: Bool = true, same_site: Str = "Lax" }
 struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
-struct http.Route { method: Str, path: Str, handler: fn(Request) -> Response }
+struct http.Route { method: Str, path: Str, handler: fn(Request) -> Response, summary: Str = "", operation_id: Str = "", tags: List[Str] = [], query: Map[Str, Str] = {}, body: Type[Any]? = nil, response: Type[Any]? = nil }
 struct http.Middleware { name: Str, apply: fn(fn(Request) -> Response) -> fn(Request) -> Response }
 struct http.Tls { cert: Str, key: Str }
 fn http.get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
@@ -289,6 +290,7 @@ fn http.timeout(ms: Int) -> Middleware
 fn http.metrics() -> Middleware
 fn http.metrics_text() -> Str
 fn http.tracing(service: Str, endpoint: Str) -> Middleware uses net
+fn http.openapi(routes: List[Route], title: Str, version: Str = "1.0.0", description: Str = "", server: Str = "") -> Str
 fn http.static(req: Request, dir: Str) -> Response uses fs
 fn http.form(req: Request) -> !Map[Str, Str]
 fn http.redirect(location: Str, status: Int = 303) -> Response
