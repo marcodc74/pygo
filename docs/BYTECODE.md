@@ -29,7 +29,7 @@ file.pg ── parse ── check ── compile ──► bytecode ──► VM
 Each function is compiled into a `Proto`:
 - a flat list of instructions `{op, a, b, c}` (three `int32` operands),
   each with the source position (line, column) it comes from;
-- constants: `Int`, `Float`, `Str`;
+- constants: `Int`, `Float`, `Str`, `Sql` (a `sql"..."` literal);
 - auxiliary tables: the syntax nodes an instruction needs for its checks
   and messages, pattern and assert tables;
 - the number of **slots** (local variables, resolved at compile time) and
@@ -141,6 +141,7 @@ execution continues with the next instruction.
 | `MAKE_RANGE` | a = aux | −1 | `lo..hi` / `lo..=hi` |
 | `FORMAT_PART` | a = aux string, b = part | 0 | format an interpolated value (`${x:.2f}`) |
 | `STR_BUILD` | a = aux string, b = parts | 1−b | join literal text and formatted parts |
+| `HTML` | a = aux literal, b = values | 1−b | render an `html"..."` literal: escape each value for its context (§14.2 of SPEC) |
 | `STRUCT_TYPE` | a = aux literal, b = slot | −1 | check the struct type and keep it in a slot |
 | `STRUCT_PRE` / `STRUCT_CHECK` | a = aux, b = field, c = slot | 0 | check a field name / its value |
 | `MAKE_STRUCT` | a = aux, b = fields, c = slot | 1−b | build the struct (defaults, missing fields) |
@@ -199,7 +200,7 @@ fn main  (examples/hello.pg:2)
 
 ```
 "PYGC"                     magic
-uvarint  format version    (1)
+uvarint  format version    (2)
 uvarint  opcode count      (the VM rejects a different instruction set)
 string   pygo version      (informational)
 string   source hash       (sha256 of the sources, hex)
@@ -222,6 +223,10 @@ defaults and contracts, and prints expressions in error messages.
   varints. Source positions are stored as line deltas.
 - **Deterministic.** The same source always gives the same bytes. The
   tests check this.
+
+**Versions.** Version 2 (after v0.2.0) added the `HTML` instruction, the
+`Kind` and `Raw` fields of string literals and `Sql`/`Html` constants.
+Files of another version are rejected (`E0910`): recompile them.
 
 **Loading.** Loading checks:
 1. the magic, the format version and the opcode count;

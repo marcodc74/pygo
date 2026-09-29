@@ -15,7 +15,7 @@ Workflow: write file.pg → `pygo check --json file.pg` → `pygo fix file.pg` (
 - Literals: `42 1_000 0xff 3.14 1e-9 true false nil [1, 2] {"k": 1}`; empty map `{}`.
 
 ## Types
-`Int` (64-bit, overflow = panic) `Float` `Str` (runes) `Bool` `List[T]` `Map[K, V]` (insertion ordered; keys Int/Str/Bool/Float) `T?` (optional, the only place nil exists) `fn(A, B) -> R` `fn(A) -> !R` `Chan[T]` `Task[T]` `Range` `Error` `Any`.
+`Int` (64-bit, overflow = panic) `Float` `Str` (runes) `Bool` `Html` (safe markup, see HTML) `List[T]` `Map[K, V]` (insertion ordered; keys Int/Str/Bool/Float) `T?` (optional, the only place nil exists) `fn(A, B) -> R` `fn(A) -> !R` `Chan[T]` `Task[T]` `Range` `Error` `Any`.
 - No implicit conversions: `float(n)`, `int(x)` (truncates), `str(x)`, `try parse_int(s)`, `try parse_float(s)`.
 - No truthiness: conditions are Bool (`not xs.is_empty()`, `x != nil`).
 - Nil safety: using a `T?` value requires a check. `if x != nil { x.len() }`, `if x == nil { return }` then x is non-nil, or `x ?? default`.
@@ -69,16 +69,40 @@ let a = match s {
 - Patterns: `_`, `name`, literals, `1 | 2`, `lo..=hi`, `lo..hi`, `Enum.Variant(p, _)`, guards `if cond`. match must be exhaustive (all variants, or `_`).
 
 ## Effects (capabilities)
-Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python`. Callers of effectful functions must declare them too. The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
+Functions declare effects: `fn fetch(url: Str) -> !Str uses net { ... }`. Effects: `fs net env proc clock rand python`. Callers of effectful functions must declare them too, and so must a function that uses an effectful function as a value (callback, route handler). The runner grants them: `pygo run --allow net,fs app.pg` (default: none; missing → exit 4). print/log/time.sleep need no effect.
 
 ## Concurrency
 `let t = spawn work(x)` → `Task[T]`; `try t.wait()`; `try wait_all(tasks)`. Channels: `let ch = chan(10)`, `ch.send(v)`, `ch.recv()` (T?, nil when closed), `ch.close()`, `for v in ch { }`. Lists/maps are thread-safe; prefer channels to shared state.
+
+## HTML
+Markup has type `Html` and is written ONLY as `html"..."` / `html"""..."""`. Each `${x}` is escaped for where it appears (text, attribute, URL, `<script>`); an `Html` value is inserted as it is; a `List[Html]` is concatenated. `${}` accepts Str Int Float Bool Html List[Html]. A `Str` never becomes `Html`, so injected markup is impossible.
+```
+fn row(u: User) -> Html => html"<li data-age='${u.age}'>${u.name}</li>"
+fn page(users: List[User]) -> http.Response => http.html(200, body: html"<ul>${users.map(row)}</ul>")
+```
+- Each literal is a complete fragment: close tags, quotes and comments inside it (E0312). Use `'` for attributes in one-line literals, or `"""`.
+- `html.raw(s)` (`import "html"`) marks text as markup WITHOUT escaping: only for markup you wrote, never for input.
+
+## HTTP server
+```
+fn routes() -> List[http.Route] uses fs {
+    return [
+        http.Route{method: "GET", path: "/items/{id}", handler: show},   // req.params["id"]
+        http.Route{method: "POST", path: "/items", handler: create},      // try http.form(req) or json.decode_as(req.body, schema: T)
+        http.Route{method: "GET", path: "/static/{path...}", handler: fn(req) => http.static(req, dir: "public")},
+    ]
+}
+fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.dispatch(req, routes: routes())) }
+```
+- The FIRST matching route wins; same path with another method → 405, no match → 404. Test handlers by calling them with an `http.Request{...}` literal.
+- Responses: `http.text/json/html(status, body: x)`, `http.redirect("/items")` (303), `http.Response{status: 200, body: b, headers: {...}, cookies: [http.Cookie{name: "s", value: v}]}` (cookies default to HttpOnly, Secure, SameSite=Lax). Request cookies: `req.cookies.get("s")`.
+- Bodies over `max_body` (serve argument, default 1 MiB) get 413.
 
 ## Tests
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.
 
 ## Modules
-`import "json"` (stdlib: json fs os http time log math re proc rand), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
+`import "json"` (stdlib: json fs os http html time log math re proc rand), `import "./lib/geo"` (local file geo.pg, used as `geo.area(...)`), `import "./x" as y`. All top-level names are public.
 
 ## Python libraries (extern)
 Declare exactly what you use; the checker validates calls like any Pygo function:
@@ -224,16 +248,28 @@ fn fs.remove(path: Str) -> ! uses fs
 fn fs.mkdir(path: Str) -> ! uses fs
 ```
 
+### import "html"
+```
+fn html.raw(text: Str) -> Html
+```
+
 ### import "http"
 ```
-struct http.Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str }
-struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {} }
+struct http.Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str, params: Map[Str, Str] = {}, cookies: Map[Str, Str] = {} }
+struct http.Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, http_only: Bool = true, secure: Bool = true, same_site: Str = "Lax" }
+struct http.Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
+struct http.Route { method: Str, path: Str, handler: fn(Request) -> Response }
 fn http.get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
 fn http.request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net
-fn http.serve(addr: Str, handler: fn(Request) -> Response) -> ! uses net
+fn http.serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net
+fn http.dispatch(req: Request, routes: List[Route]) -> Response
+fn http.static(req: Request, dir: Str) -> Response uses fs
+fn http.form(req: Request) -> !Map[Str, Str]
+fn http.redirect(location: Str, status: Int = 303) -> Response
 fn http.text(status: Int, body: Str) -> Response
 fn http.json(status: Int, body: Any) -> Response
+fn http.html(status: Int, body: Html) -> Response
 ```
 
 ### import "json"

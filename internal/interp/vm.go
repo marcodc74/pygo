@@ -85,6 +85,7 @@ const (
 	OpBreakOutside
 	OpFormatPart
 	OpCheckKey
+	OpHtml
 	numOpcodes
 )
 
@@ -99,7 +100,7 @@ var opNames = [...]string{
 	"LET_CHECK", "ASSIGN_FIELD", "ASSIGN_INDEX", "ASSIGN_COMPUTE", "ITER_INIT",
 	"ITER_NEXT", "MATCH_PAT", "GUARD", "NO_MATCH", "MAKE_CLOSURE", "ASSERT_BIN",
 	"ASSERT_COND", "ASSERT_COLLECT", "ASSERT_RAISE", "BREAK_OUTSIDE", "FORMAT_PART",
-	"CHECK_KEY",
+	"CHECK_KEY", "HTML",
 }
 
 func (o Opcode) String() string {
@@ -380,6 +381,14 @@ func (th *Thread) runProto(f *Function, p *Proto, args []Value) (Value, error) {
 			r, err = th.makeRange(p.Aux[in.A].(*ast.Range), lo, hi)
 			if err == nil {
 				push(r)
+			}
+		case OpHtml:
+			n := int(in.B)
+			var h Value
+			h, err = th.renderHtml(p.Aux[in.A].(*ast.StrLit), stack[len(stack)-n:])
+			stack = stack[:len(stack)-n]
+			if err == nil {
+				push(h)
 			}
 		case OpStrBuild:
 			n := int(in.B)

@@ -4,7 +4,7 @@ import "testing"
 
 func TestHeadersParse(t *testing.T) {
 	ms := Modules()
-	for _, n := range []string{"core", "json", "fs", "os", "http", "time", "log", "math", "re", "proc", "rand"} {
+	for _, n := range []string{"core", "json", "fs", "os", "http", "html", "time", "log", "math", "re", "proc", "rand"} {
 		if ms[n] == nil {
 			t.Fatalf("missing module %s", n)
 		}

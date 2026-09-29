@@ -1,14 +1,34 @@
-/// Request received by a server handler.
-struct Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str }
+/// Request received by a server handler. params holds the route parameters
+/// set by dispatch ({id} in "/items/{id}"); cookies holds the request cookies.
+struct Request { method: Str, path: Str, query: Map[Str, Str], headers: Map[Str, Str], body: Str, params: Map[Str, Str] = {}, cookies: Map[Str, Str] = {} }
+/// Cookie sent with a response. max_age in seconds: 0 = until the browser closes, -1 = delete now.
+/// same_site is "Lax", "Strict" or "None" ("None" requires secure).
+struct Cookie { name: Str, value: Str, path: Str = "/", max_age: Int = 0, http_only: Bool = true, secure: Bool = true, same_site: Str = "Lax" }
 /// Response returned by a handler or by a client call.
-struct Response { status: Int, body: Str = "", headers: Map[Str, Str] = {} }
+struct Response { status: Int, body: Str = "", headers: Map[Str, Str] = {}, cookies: List[Cookie] = [] }
+/// A route for dispatch. method: GET (also answers HEAD), POST, PUT, PATCH, DELETE, HEAD or OPTIONS.
+/// path: literal segments, {name} (one segment) and a final {name...} (the rest of the path).
+struct Route { method: Str, path: Str, handler: fn(Request) -> Response }
 
 fn get(url: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 fn post(url: Str, body: Str, headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 fn request(method: Str, url: Str, body: Str = "", headers: Map[Str, Str] = {}, timeout_ms: Int = 30000) -> !Response uses net {}
 /// Serve HTTP on addr (e.g. ":8080") until SIGINT/SIGTERM (graceful shutdown). handler runs concurrently.
-fn serve(addr: Str, handler: fn(Request) -> Response) -> ! uses net {}
+/// Request bodies over max_body bytes get 413 without calling the handler.
+fn serve(addr: Str, handler: fn(Request) -> Response, max_body: Int = 1048576) -> ! uses net {}
+/// Calls the handler of the FIRST route whose method and path match, with req.params set.
+/// A path that matches only with another method gives 405 (header allow), no match 404.
+fn dispatch(req: Request, routes: List[Route]) -> Response {}
+/// Serves the file req.params["path"] (route "/static/{path...}") from dir, with its content type.
+/// Hidden files (.env), ".." and symlinks leading outside dir give 404.
+fn static(req: Request, dir: Str) -> Response uses fs {}
+/// Fields of an application/x-www-form-urlencoded body (HTML form POST).
+fn form(req: Request) -> !Map[Str, Str] {}
+/// Redirect (303 See Other by default: the usual answer to a form POST).
+fn redirect(location: Str, status: Int = 303) -> Response {}
 /// Plain-text response.
 fn text(status: Int, body: Str) -> Response {}
 /// JSON response (body is encoded with json.encode).
 fn json(status: Int, body: Any) -> Response {}
+/// HTML page or fragment (content-type text/html; charset=utf-8); build body with html"...".
+fn html(status: Int, body: Html) -> Response {}

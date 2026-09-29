@@ -56,6 +56,7 @@ type Token struct {
 	Pos    diag.Pos
 	Parts  []StrPart // STRING only
 	Raw    bool      // STRING only: r"..." literal
+	Prefix string    // STRING only: "html" or "sql" for html"..." / sql"..." literals
 	Doc    string    // "///" doc comment lines immediately preceding the token
 	Off    int       // rune offset of the token start
 	End    int       // rune offset just after the token
@@ -196,7 +197,7 @@ func (l *Lexer) Tokenize() []Token {
 			l.advance()
 		case c == '/' && l.peek(1) == '/':
 			l.comment()
-		case c == '"' || (c == 'r' && l.peek(1) == '"'):
+		case c == '"' || (c == 'r' && l.peek(1) == '"') || l.at(`html"`) || l.at(`sql"`):
 			l.str()
 		case isLetter(c):
 			l.ident()
@@ -229,6 +230,16 @@ func closing(r rune) rune {
 }
 
 func isLetter(c rune) bool { return c == '_' || unicode.IsLetter(c) }
+
+// at reports whether the source continues with s.
+func (l *Lexer) at(s string) bool {
+	for k, r := range []rune(s) {
+		if l.peek(k) != r {
+			return false
+		}
+	}
+	return true
+}
 
 func (l *Lexer) comment() {
 	isDoc := l.peek(2) == '/' && l.peek(3) != '/'
@@ -347,12 +358,22 @@ func (l *Lexer) op() {
 	l.emit(Token{Kind: OP, Text: string(c), Pos: p})
 }
 
-// str lexes "...", """...""", r"..." and r"""...""".
+// str lexes "...", """...""", r"..." and r"""...""", and the trusted
+// literals html"..." and sql"..." (also triple-quoted).
 func (l *Lexer) str() {
 	p := l.pos()
 	raw := false
-	if l.peek(0) == 'r' {
+	prefix := ""
+	switch {
+	case l.peek(0) == 'r':
 		raw = true
+		l.advance()
+	case l.at("html"):
+		prefix = "html"
+	case l.at("sql"):
+		prefix = "sql"
+	}
+	for range prefix {
 		l.advance()
 	}
 	triple := l.peek(0) == '"' && l.peek(1) == '"' && l.peek(2) == '"'
@@ -431,6 +452,13 @@ func (l *Lexer) str() {
 			continue
 		}
 		if c == '$' && l.peek(1) == '{' {
+			if prefix == "sql" {
+				l.Diags.Errorf("E0121", l.pos(), "write a ? placeholder and pass the value in args: [...]", "sql literals cannot contain interpolation")
+				l.advance()
+				l.interpolation()
+				buf.WriteRune('?')
+				continue
+			}
 			flush()
 			l.advance()
 			parts = append(parts, l.interpolation())
@@ -441,7 +469,7 @@ func (l *Lexer) str() {
 	if buf.Len() > 0 || len(parts) == 0 {
 		parts = append(parts, StrPart{Text: buf.String()})
 	}
-	l.emit(Token{Kind: STRING, Text: "string", Pos: p, Parts: parts, Raw: raw})
+	l.emit(Token{Kind: STRING, Text: "string", Pos: p, Parts: parts, Raw: raw, Prefix: prefix})
 }
 
 func (l *Lexer) unicodeEscape(buf *strings.Builder, ep diag.Pos) {

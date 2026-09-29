@@ -107,7 +107,8 @@ extern python "builtins" as py {
 
 fn main() -> ! uses python {
     let a = math.sqrt(-1.0) catch e {
-        print(e.code, e.message)
+        // the text after the exception type changed in Python 3.14
+        print(e.code, e.message.starts_with("ValueError: "))
         0.0
     }
     let b = missing.f() catch e {
@@ -124,7 +125,7 @@ fn main() -> ! uses python {
     }
     print(a, b, c, d)
 }
-`, `E_PYTHON ValueError: math domain error
+`, `E_PYTHON true
 E_PYTHON_IMPORT true
 E_PYTHON_TYPE str returned a value that does not match Int: result: expected Int, got string
 E_PYTHON_TYPE

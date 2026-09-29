@@ -18,22 +18,37 @@ fn catalog() -> List[Item] {
 
 fn find(items: List[Item], id: Int) -> Item? => items.find(fn(it) => it.id == id)
 
-/// Routes: GET /healthz, GET /items, GET /items?id=N
-fn handle(req: http.Request) -> http.Response {
-    log.info("request", fields: {"method": req.method, "path": req.path})
-    return match req.path {
-        "/healthz" => http.text(200, body: "ok")
-        "/items" => items_route(req)
-        _ => http.json(404, body: {"error": "not found", "path": req.path})
-    }
+/// The first route whose method and path match handles the request.
+fn routes() -> List[http.Route] {
+    return [
+        http.Route{method: "GET", path: "/", handler: home},
+        http.Route{method: "GET", path: "/healthz", handler: fn(req) => http.text(200, body: "ok")},
+        http.Route{method: "GET", path: "/items", handler: list_items},
+        http.Route{method: "GET", path: "/items/{id}", handler: show_item},
+    ]
 }
 
-fn items_route(req: http.Request) -> http.Response {
-    let raw = req.query.get("id")
-    if raw == nil {
-        return http.json(200, body: catalog())
-    }
-    let id = parse_int(raw) catch e {
+fn handle(req: http.Request) -> http.Response {
+    log.info("request", fields: {"method": req.method, "path": req.path})
+    return http.dispatch(req, routes: routes())
+}
+
+fn home(req: http.Request) -> http.Response => http.html(200, body: page(catalog()))
+
+fn list_items(req: http.Request) -> http.Response => http.json(200, body: catalog())
+
+/// One table row; every value is escaped for where it appears.
+fn row(it: Item) -> Html => html"<tr><td><a href='/items/${it.id}'>${it.name}</a></td><td>${it.price:.2}</td></tr>"
+
+fn page(items: List[Item]) -> Html {
+    return html"""
+<!doctype html>
+<title>Catalog</title>
+<table>${items.map(row)}</table>"""
+}
+
+fn show_item(req: http.Request) -> http.Response {
+    let id = parse_int(req.params["id"]) catch e {
         return http.json(400, body: {"error": e.message})
     }
     let item = find(catalog(), id: id)
@@ -55,11 +70,22 @@ test "item lookup" {
     assert find(catalog(), id: 9) == nil
 }
 
+fn get(path: Str) -> http.Response => handle(http.Request{method: "GET", path: path, query: {}, headers: {}, body: ""})
+
 test "routing" {
-    let req = http.Request{method: "GET", path: "/items", query: {"id": "1"}, headers: {}, body: ""}
-    let res = handle(req)
+    let res = get("/items/1")
     assert res.status == 200
     assert res.body.contains("keyboard")
-    let missing = handle(http.Request{method: "GET", path: "/nope", query: {}, headers: {}, body: ""})
-    assert missing.status == 404
+    assert get("/items/9").status == 404
+    assert get("/items/x").status == 400
+    assert get("/nope").status == 404
+    let post = handle(http.Request{method: "POST", path: "/items", query: {}, headers: {}, body: ""})
+    assert post.status == 405
+    assert post.headers["allow"] == "GET, HEAD"
+}
+
+test "html page escapes item names" {
+    let html_page = str(page([Item{id: 3, name: "<b>pen</b>", price: 1.5}]))
+    assert html_page.contains("<a href='/items/3'>&lt;b&gt;pen&lt;/b&gt;</a>")
+    assert html_page.contains("<td>1.50</td>")
 }

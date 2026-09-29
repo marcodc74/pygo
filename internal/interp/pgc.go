@@ -37,7 +37,7 @@ import (
 
 const (
 	pgcMagic   = "PYGC"
-	pgcVersion = 1
+	pgcVersion = 2
 )
 
 // Compiled holds the bytecode of a program's functions and tests (from a
@@ -315,7 +315,7 @@ func validateProto(p *Proto, depth int) error {
 		case OpCall, OpSpawn, OpDefer, OpStoreGlobal:
 			ok = in(ins.B, len(p.Aux))
 		case OpBinary, OpUnary, OpLogic, OpIfCond, OpWhileCond, OpSelector, OpIndex, OpMakeRange,
-			OpStrBuild, OpFormatPart, OpFail, OpLetCheck, OpAssignField, OpAssignIndex, OpAssignCompute,
+			OpStrBuild, OpFormatPart, OpHtml, OpFail, OpLetCheck, OpAssignField, OpAssignIndex, OpAssignCompute,
 			OpIterInit, OpGuard, OpAssertBin, OpAssertCond, OpAssertCollect, OpAssertRaise, OpPanicImmutable:
 			ok = in(ins.A, len(p.Aux))
 		default:
@@ -366,6 +366,8 @@ var pgcTypes = []reflect.Type{
 	reflect.TypeOf(&ast.ConstDecl{}), reflect.TypeOf(&ast.ExternDecl{}),
 	// bytecode tables
 	reflect.TypeOf(&ast.MatchArm{}), reflect.TypeOf(&matchInfo{}), reflect.TypeOf(&assertInfo{}),
+	// version 2: trusted text constants
+	reflect.TypeOf(HtmlStr("")), reflect.TypeOf(SqlStr("")),
 }
 
 var pgcTypeIndex = func() map[reflect.Type]int {

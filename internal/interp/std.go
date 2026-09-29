@@ -152,12 +152,22 @@ func init() {
 			return th.httpDo(strings.ToUpper(a[0].(string)), a[1].(string), a[2].(string), a[3].(*Map), a[4].(int64))
 		},
 		"serve": func(th *Thread, _ Value, a []Value) (Value, error) {
-			return th.httpServe(a[0].(string), a[1])
+			return th.httpServe(a[0].(string), a[1], a[2].(int64))
+		},
+		"dispatch": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.httpDispatch(a[0].(*Struct), a[1].(*List))
+		},
+		"static": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.httpStatic(a[0].(*Struct), a[1].(string))
+		},
+		"form": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.httpForm(a[0].(*Struct))
+		},
+		"redirect": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return th.httpRedirect(a[0].(string), a[1].(int64))
 		},
 		"text": func(th *Thread, _ Value, a []Value) (Value, error) {
-			h := NewMap()
-			h.Set("content-type", "text/plain; charset=utf-8")
-			return th.httpResponse(a[0].(int64), a[1].(string), h), nil
+			return th.httpText(a[0].(int64), a[1].(string)), nil
 		},
 		"json": func(th *Thread, _ Value, a []Value) (Value, error) {
 			var b bytes.Buffer
@@ -167,6 +177,17 @@ func init() {
 			h := NewMap()
 			h.Set("content-type", "application/json")
 			return th.httpResponse(a[0].(int64), b.String(), h), nil
+		},
+		"html": func(th *Thread, _ Value, a []Value) (Value, error) {
+			h := NewMap()
+			h.Set("content-type", "text/html; charset=utf-8")
+			return th.httpResponse(a[0].(int64), string(a[1].(HtmlStr)), h), nil
+		},
+	})
+
+	register("html", map[string]BuiltinFn{
+		"raw": func(th *Thread, _ Value, a []Value) (Value, error) {
+			return HtmlStr(a[0].(string)), nil
 		},
 	})
 
@@ -404,11 +425,6 @@ func (th *Thread) regex(p string) (*regexp.Regexp, error) {
 
 // ---------- http ----------
 
-func (th *Thread) httpResponse(status int64, body string, headers *Map) *Struct {
-	st := th.in.stdModule("http").Types["Response"].(*StructType)
-	return &Struct{T: st, F: []Value{status, body, headers}}
-}
-
 func (th *Thread) httpDo(method, url, body string, headers *Map, timeoutMs int64) (Value, error) {
 	req, err := http.NewRequest(method, url, strings.NewReader(body))
 	if err != nil {
@@ -440,85 +456,11 @@ func (th *Thread) httpDo(method, url, body string, headers *Map, timeoutMs int64
 	return th.httpResponse(int64(resp.StatusCode), string(b), h), nil
 }
 
-func (th *Thread) httpServe(addr string, handler Value) (Value, error) {
-	in := th.in
-	mod := th.mod()
-	reqType := in.stdModule("http").Types["Request"].(*StructType)
-	respType := in.stdModule("http").Types["Response"].(*StructType)
-	logErr := func(msg string, extra map[string]string) {
-		var b bytes.Buffer
-		b.WriteString(`{"ts":`)
-		encodeJSON(&b, time.Now().UTC().Format(time.RFC3339Nano), 0, 0)
-		b.WriteString(`,"level":"error","msg":`)
-		encodeJSON(&b, msg, 0, 0)
-		for k, v := range extra {
-			b.WriteString(`,`)
-			encodeJSON(&b, k, 0, 0)
-			b.WriteString(`:`)
-			encodeJSON(&b, v, 0, 0)
-		}
-		b.WriteString("}\n")
-		in.errw.WriteString(b.String())
-		in.errw.Flush()
+func (th *Thread) httpServe(addr string, handler Value, maxBody int64) (Value, error) {
+	if maxBody <= 0 {
+		return nil, perr(PArgs, "", "http.serve: max_body must be positive, got %d", maxBody)
 	}
-	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 32<<20))
-		q := NewMap()
-		qk := make([]string, 0)
-		for k := range r.URL.Query() {
-			qk = append(qk, k)
-		}
-		sort.Strings(qk)
-		for _, k := range qk {
-			q.Set(k, r.URL.Query().Get(k))
-		}
-		hd := NewMap()
-		hk := make([]string, 0)
-		for k := range r.Header {
-			hk = append(hk, k)
-		}
-		sort.Strings(hk)
-		for _, k := range hk {
-			hd.Set(strings.ToLower(k), r.Header.Get(k))
-		}
-		req := &Struct{T: reqType, F: []Value{r.Method, r.URL.Path, q, hd, string(body)}}
-		nth := in.newThread(mod)
-		var res Value
-		var err error
-		func() {
-			defer func() {
-				if p := recover(); p != nil {
-					err = &Panic{Code: PInternal, Message: fmt.Sprint(p)}
-				}
-			}()
-			defer nth.flushSteps()
-			res, err = nth.callValue(handler, []Value{req}, nil, ast.Pos{})
-		}()
-		if err != nil {
-			logErr("handler error", map[string]string{"error": err.Error(), "path": r.URL.Path})
-			http.Error(w, "internal error", 500)
-			return
-		}
-		resp, ok := res.(*Struct)
-		if !ok || resp.T != respType {
-			logErr("handler must return http.Response", map[string]string{"got": TypeName(res)})
-			http.Error(w, "internal error", 500)
-			return
-		}
-		f := resp.Snapshot()
-		if hm, ok := f[2].(*Map); ok {
-			ks, vs := hm.Items()
-			for i := range ks {
-				w.Header().Set(Str(ks[i]), Str(vs[i]))
-			}
-		}
-		status, _ := f[0].(int64)
-		if status < 100 || status > 999 {
-			status = 500
-		}
-		w.WriteHeader(int(status))
-		io.WriteString(w, Str(f[1]))
-	})
+	h := th.httpHandler(handler, maxBody)
 	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -590,10 +532,10 @@ func encodeJSON(b *bytes.Buffer, v Value, indent, depth int) error {
 			}
 			b.WriteString(s)
 		}
-	case string:
+	case string, HtmlStr, SqlStr:
 		enc := json.NewEncoder(b)
 		enc.SetEscapeHTML(false)
-		if err := enc.Encode(x); err != nil {
+		if err := enc.Encode(Str(x)); err != nil {
 			return err
 		}
 		b.Truncate(b.Len() - 1) // drop the newline added by Encode
@@ -749,6 +691,9 @@ func (th *Thread) convert(v Value, te *ast.TypeExpr, m *Module, path string) (Va
 			return v, ""
 		}
 		return bad()
+	case "Html", "Sql":
+		// trusted text comes only from literals, never from data
+		return nil, fmt.Sprintf("%s: %s cannot come from data; build it with a %s\"...\" literal", path, te.Name, strings.ToLower(te.Name))
 	case "List":
 		l, ok := v.(*List)
 		if !ok {
