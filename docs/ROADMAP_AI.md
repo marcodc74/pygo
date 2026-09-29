@@ -40,7 +40,7 @@ Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees
 - **M4 — AI in the loop:** AI-1, AI-2.
 - **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
 - **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
-- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-3 shipped; SRV-4 is next).
+- **M7 — Production services:** SRV-1..SRV-8 (SRV-1..SRV-4 shipped; SRV-5 is next).
 
 Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M7 makes the result
 deployable; M5 deepens the moat.
@@ -254,8 +254,8 @@ Goal: a generated service can face real traffic with the boring guarantees
 untyped Python. Breadth is delegated through typed interop; the language keeps
 the safety guarantees.
 
-SRV-1, SRV-2 and SRV-3 are **shipped**; SRV-4 is next and the rest are queued.
-Definition
+SRV-1, SRV-2, SRV-3 and SRV-4 are **shipped**; SRV-5 is next and the rest are
+queued. Definition
 of done for an open item: signatures in `internal/sig/std/`, a Go
 implementation, entries in `pygo guide` / `pygo explain` where relevant, tests
 on all three engines, and a worked example under `examples/`.
@@ -320,9 +320,32 @@ on all three engines, and a worked example under `examples/`.
   and effect enforcement; `examples/observability.pg`.
 - **Effort:** M. **Deps:** none.
 
-### SRV-4 · `extern sql`
-- Typed queries and migrations without `python`: schema-checked parameters and
-  results, capability-scoped connection string. (L)
+### SRV-4 · `extern sql`  `done`
+- **Problem:** every service needs persistence, and today the only option is
+  `--allow python`, which drops the typing (and the sandbox) on the floor.
+- **Design:** a PostgreSQL client in the runtime itself (wire protocol over
+  `net.Conn`), so the toolchain stays one static binary with no driver and no
+  CGO. `sql.open(dsn)` returns an opaque handle and connects lazily; `query`
+  returns `List[Map[Str, Any]]`, `query_as(..., schema: T)` decodes rows into a
+  declared struct/enum (`E_SCHEMA` on a mismatch), `exec` returns the affected
+  rows. Values travel out of band with the extended query protocol (`$1` or
+  `?`, rewritten to `$1...`); nothing is concatenated into the SQL, so the
+  `Sql` literal keeps its meaning. New capability `sql`, added to the closed
+  set in `internal/sig/sig.go`.
+- **Touchpoints:** `internal/sig/std/sql.pg`, `internal/sig/sig.go`,
+  `internal/interp/sql.go`, guide and tests.
+- **Acceptance:** queries work against a real PostgreSQL on all three engines;
+  a tampered/missing column fails with `E_SCHEMA`; a refused connection,
+  a bad DSN and a server error are `E_SQL` failures with the SQLSTATE;
+  `uses sql` is enforced and denied without the grant.
+- **Shipped:** `sql.{open, close, query, query_as, exec}` over the native
+  wire protocol (startup, SCRAM-SHA-256/MD5/cleartext auth, TLS via
+  `sslmode`); text results decode to `Int`/`Float`/`Bool`/`Str`, parameters
+  accept `Int`/`Float`/`Str`/`Bool`/`nil`. Tests: DSN and placeholder
+  parsing, value decoding, MD5/SCRAM, an in-process mock server on the three
+  engines, and a real-server integration test in CI (service container).
+  `examples/sql.pg`.
+- **Effort:** L. **Deps:** none.
 
 ### SRV-5 · TLS
 - `http.serve(addr, handler, tls: ...)` with a certificate path, or a documented

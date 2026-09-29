@@ -287,8 +287,9 @@ There are two kinds of error.
 ## 8. Effects (capabilities)
 
 The effects are `fs`, `net`, `env`, `proc`, `clock`, `rand`, `python`
-(calls into Python libraries, §14.1) and `crypto` (`crypto.random_bytes`).
-Hashing, HMAC, PBKDF2 and JWT signing/verification are pure and need no grant.
+(calls into Python libraries, §14.1), `crypto` (`crypto.random_bytes`) and
+`sql` (PostgreSQL access, §14.4). Hashing, HMAC, PBKDF2 and JWT
+signing/verification are pure and need no grant.
 
 - **Declaration**: a function that performs an effect directly, or calls a
   function that does, must declare it: `uses net, fs` (E0501). Declared but
@@ -426,6 +427,7 @@ the checker, the runtime, `describe` and `guide`.
 | `rand` | seeded, deterministic (`uses rand`) |
 | `crypto` | `sha256`, `hmac_sha256`, `equal` (constant time), `pbkdf2`; `random_bytes` (`uses crypto`, seeded) |
 | `jwt` | `sign_hs256`, `verify_hs256(token, key) -> !Map[Str, Any]`; pure, HS256 |
+| `sql` | PostgreSQL without a driver: `open` (lazy, `uses sql`), `close`, `query` → `List[Map[Str, Any]]`, `query_as(..., schema: T)` → `List[T]`, `exec` → affected rows; `$1` or `?` parameters (§14.4) |
 
 ### 14.1 Python libraries (`extern python`)
 
@@ -567,6 +569,46 @@ read whole into memory.
 `application/x-www-form-urlencoded` body (the first value of each field)
 and fails with `E_FORM` on another content type or malformed input.
 `http.redirect(location, status: 303)` accepts 301, 302, 303, 307 and 308.
+
+### 14.4 SQL (PostgreSQL)
+
+`import "sql"` is a PostgreSQL client written into the runtime itself: it
+speaks the wire protocol over `net.Conn`, so there is no CGO and no driver
+dependency in the single static binary. It needs the `sql` capability:
+callers declare `uses sql` and the runner grants `--allow sql`.
+
+```
+let conn = try sql.open("postgres://user:pw@host:5432/db?sslmode=disable")
+
+let rows = try sql.query(conn, text: sql"SELECT id, name FROM items WHERE id = $1", args: [id])
+for row in rows { print(row["id"], row["name"]) }
+
+let items = try sql.query_as(conn, text: sql"SELECT id, name FROM items", schema: Item)
+let changed = try sql.exec(conn, text: sql"UPDATE items SET name = ? WHERE id = ?", args: ["ada", id])
+sql.close(conn)
+```
+
+- **Connection string.** `open` accepts a URL
+  (`postgres://user:pw@host:port/db?sslmode=...`) or libpq `key=value`
+  pairs. `sslmode` is `disable`, `allow`, `prefer` (default), `require`,
+  `verify-ca` or `verify-full`. The socket opens lazily on the first
+  statement, so `open` itself fails only on an invalid string.
+- **Queries.** `sql.query` returns `List[Map[Str, Any]]` (column name to
+  value); `sql.query_as(..., schema: T)` decodes each row into `T` (a struct
+  or enum) with the same validation as `json.decode_as`, failing with
+  `E_SCHEMA` on a missing or mistyped column. `sql.exec` returns the number
+  of affected rows and is the way to run `INSERT`/`UPDATE`/`DELETE`/DDL.
+- **Parameters.** Values are sent out of band with the extended query
+  protocol, never concatenated into the SQL. Use `$1, $2, ...`; a query with
+  `?` placeholders is rewritten to `$1, $2, ...` when arguments are passed.
+  Supported argument types are `Int`, `Float`, `Str`, `Bool` and `nil`.
+- **Results.** Text results map to `Int`, `Float`, `Bool` or `Str` by column
+  type; other types (dates, uuid, json, arrays, ...) come back as `Str`.
+- **Errors** are failures with code `E_SQL`, carrying the server message and
+  `SQLSTATE` when available. Authentication supports SCRAM-SHA-256, MD5 and
+  cleartext.
+- **Transactions** are plain statements: `sql.exec(conn, text: sql"BEGIN")`,
+  then `COMMIT` or `ROLLBACK`.
 
 ## 15. Deployment
 

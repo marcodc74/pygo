@@ -1,0 +1,27 @@
+/// A connection to a PostgreSQL server. Build it with sql.open; it is a
+/// handle, never a literal. The socket opens lazily on the first query or exec.
+struct Conn { id: Int }
+
+/// Parse a connection string and return a handle. Accepts a URL
+/// ("postgres://user:pass@host:5432/db?sslmode=disable") or libpq key=value
+/// pairs ("host=... user=... password=... dbname=... sslmode=..."). The TCP
+/// connection is opened on the first query or exec; this call fails with code
+/// "E_SQL" only when the connection string is invalid.
+fn open(dsn: Str, timeout_ms: Int = 5000) -> !Conn uses sql {}
+
+/// Close the connection; safe to call more than once.
+fn close(conn: Conn) uses sql {}
+
+/// Run a SELECT and return its rows as maps from column name to value.
+/// Use $1, $2, ... placeholders and pass the values in args (or ?, which is
+/// rewritten to $1...). Fails with code "E_SQL".
+fn query(conn: Conn, text: Sql, args: List[Any] = [], timeout_ms: Int = 30000) -> !List[Map[Str, Any]] uses sql {}
+
+/// Like query, but decodes each row into a value of type T declared by the
+/// caller (a struct or enum): sql.query_as(conn, text: sql"SELECT ...",
+/// schema: User). A row that does not match fails with code "E_SCHEMA".
+fn query_as[T](conn: Conn, text: Sql, schema: Type[T], args: List[Any] = [], timeout_ms: Int = 30000) -> !List[T] uses sql {}
+
+/// Run INSERT/UPDATE/DELETE or DDL and return the number of affected rows
+/// (0 for DDL). Same placeholders as query. Fails with code "E_SQL".
+fn exec(conn: Conn, text: Sql, args: List[Any] = [], timeout_ms: Int = 30000) -> !Int uses sql {}

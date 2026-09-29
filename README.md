@@ -437,7 +437,7 @@ v0.2.
   negli eseguibili. Ogni programma di test gira in tre modi (interprete, VM, VM da `.pgc`), che
   devono dare output, errori, trace e numero di passi identici. Dettagli in
   [`docs/BYTECODE.md`](docs/BYTECODE.md).
-- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`); observability (`/metrics` in formato Prometheus, istogramma di latenza, gauge in-flight, sonde `/healthz` e `/readyz`, span OTLP/HTTP con `http.tracing`); auth senza dipendenze (`crypto`: SHA-256, HMAC, PBKDF2, confronto a tempo costante; `jwt` HS256).
+- **Servizi di produzione (M7):** middleware componibile (`request_id`, `log_requests`, `recover`, `timeout` con `R0019`); observability (`/metrics` in formato Prometheus, istogramma di latenza, gauge in-flight, sonde `/healthz` e `/readyz`, span OTLP/HTTP con `http.tracing`); auth senza dipendenze (`crypto`: SHA-256, HMAC, PBKDF2, confronto a tempo costante; `jwt` HS256); accesso a PostgreSQL senza driver né CGO (`sql`: query tipizzate e decodifica con `query_as`, parametri `$1`/`?` fuori dal testo SQL, autenticazione SCRAM-SHA-256).
 - **Integrazione con gli LLM** ([`docs/LLM.md`](docs/LLM.md)):
   - `AGENTS.md` e una skill per Claude Code;
   - tool e agente per le API di Claude, OpenAI, Gemini e modelli locali. Li ho provati con gli SDK reali e risposte simulate, non contro le API vere.
@@ -454,15 +454,15 @@ gantt
     section Rilasciato
     Linguaggio, checker, stdlib        :done, 2025-06-01, 2026-03-01
     VM a bytecode, agenti, deploy      :done, 2026-03-01, 2026-09-01
-    Middleware, crypto, JWT, observability (SRV-1/2/3) :done, 2026-09-01, 2026-11-01
+    Middleware, crypto, JWT, observability, SQL (SRV-1/2/3/4) :done, 2026-09-01, 2026-11-01
     section In corso
-    OpenAPI, extern sql, TLS (SRV-4/5/6) :active, 2026-11-01, 2027-03-01
+    OpenAPI, TLS, multipart (SRV-5/6/7) :active, 2026-11-01, 2027-03-01
     section Dopo
     Package manager, WASM, LSP         :2027-03-01, 2027-12-01
     Record/replay, contratti dai test  :2027-09-01, 2028-06-01
 ```
 
-- **Prossimo — servizi di produzione (M7):** `extern sql` (`SRV-4`), TLS, OpenAPI, multipart/streaming, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
+- **Prossimo — servizi di produzione (M7):** TLS (`SRV-5`), OpenAPI (`SRV-6`), multipart/streaming, code e stream. Dettagli e criteri di accettazione in [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md).
 - **Piattaforma:** firma Authenticode dei binari Windows, backend WebAssembly, LSP, package manager, `select` su più canali, effetti per le funzioni di ordine superiore, conservare i commenti in `fmt`, trait e interfacce.
 - **Verso l'IA nativa (M1–M6):** constrained decoding dalla grammatica, contesto selezionato a budget, record/replay degli effetti, contratti generati dagli esempi, correzione con prove (property test e fuzzing).
 

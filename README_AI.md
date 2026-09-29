@@ -94,7 +94,7 @@ fn main() -> ! {
 
 ## Safety: effects are capabilities
 
-The closed set is `clock crypto env fs net proc python rand`. A function that
+The closed set is `clock crypto env fs net proc python rand sql`. A function that
 performs an effect — or calls one, or holds one as a value — must declare it
 (`E0501`); declaring an unused effect warns (`W0503`).
 
@@ -157,6 +157,31 @@ fn main() -> ! uses net {
 - Test a handler directly with an `http.Request{...}` literal — no socket needed.
 - Observability: add `http.metrics()` to the middleware and serve `http.metrics_text()` at `/metrics`; `/healthz` and `/readyz` are plain routes. `http.tracing("service", endpoint: "http://host:4318")` exports OTLP/HTTP spans (`uses net`).
 
+## PostgreSQL (`sql`)
+
+A PostgreSQL client lives in the runtime (no driver, no CGO); it needs the
+`sql` capability. The socket opens lazily on the first statement, so `open`
+fails only on a bad connection string.
+
+```
+import "sql"
+
+struct Item { id: Int, name: Str, price: Float }
+
+fn list(conn: sql.Conn) -> !List[Item] uses sql {
+    return try sql.query_as(conn, text: sql"SELECT id, name, price FROM items ORDER BY id", schema: Item)
+}
+
+fn add(conn: sql.Conn, name: Str, price: Float) -> !Int uses sql {
+    let rows = try sql.query(conn, text: sql"INSERT INTO items (name, price) VALUES ($1, $2) RETURNING id", args: [name, price])
+    return int(rows[0]["id"])
+}
+```
+
+- `sql.query(conn, text: sql"...", args: [...])` → `List[Map[Str, Any]]`; `query_as(..., schema: T)` decodes rows into `T` (`E_SCHEMA` on mismatch); `exec` → affected rows.
+- Parameters are sent out of band with the extended query protocol: use `$1, $2, ...` (a `?` is rewritten to `$n` when args are passed). Never build SQL with `${}` (E0121).
+- `open` takes a URL (`postgres://user:pw@host:5432/db?sslmode=disable`) or `key=value` pairs; auth is SCRAM-SHA-256/MD5/cleartext. Errors are `E_SQL` (with the SQLSTATE).
+
 ## Determinism and budgets
 
 Same source + same inputs + same seed `=>` same output, on every engine.
@@ -196,7 +221,7 @@ pygo fmt -w lib/geo.pg && pygo check --json lib/geo.pg
 - Do return `!T` for anything that can fail, and handle it.
 - Do keep effects minimal and explicit.
 - Don't invent stdlib names or Python bindings — `describe` and `extern python` exist for that.
-- Don't use `python` for crypto, JSON, HTTP or regex; the stdlib covers them without a sandbox.
+- Don't use `python` for crypto, JSON, HTTP, SQL or regex; the stdlib covers them without a sandbox.
 - Don't edit by line offset; use `outline` + `edit`.
 
 ## See also
