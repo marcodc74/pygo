@@ -1,0 +1,273 @@
+# Pygo AI-Native Roadmap
+
+This is the working plan for evolving Pygo from "a language an LLM can use" into
+"a language an LLM can be trusted to run unattended". It is organized around
+three levers that map directly to the failure modes of LLM-authored code:
+
+1. **Generation reliability** — reduce the probability of a wrong generation.
+2. **Repair cost** — reduce the tokens/turns needed to detect and fix an error.
+3. **Execution trust** — make generated code safe to run without supervision.
+
+Everything below either (a) makes a guarantee static instead of runtime, (b)
+makes feedback machine-readable and actionable, or (c) makes effects and cost
+bounded and replayable. Proposals that do none of these are out of scope.
+
+Status legend: `done` · `planned` · `research`.
+
+Touchpoints are given as paths in this repository so each item is actionable.
+
+---
+
+## 0. Shipped baseline (hardening round)
+
+| ID | Item | Status |
+|----|------|--------|
+| H1 | Call-depth limit `R0018` in `callFunction` (tree/vm/pgc agree; no more Go stack-overflow fatal) | done |
+| H2 | Blocking operations respect `--timeout` and never trigger the Go deadlock fatal (watchdog + `stop` channel) | done |
+| H3 | `-9223372036854775808` literal accepted, positive magnitude still rejected | done |
+| H4 | `--json` uniform for `describe`/`outline`; `fix --dry-run --json` keeps stdout machine-readable | done |
+| H5 | Differential tree/vm/pgc corpus harness (adversarial testing) | done (manual) |
+
+Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees.
+
+---
+
+## Milestones
+
+- **M1 — Generation (weeks):** GEN-1, GEN-2, GEN-3.
+- **M2 — Repair loop:** REP-1, REP-2, REP-3, REP-4.
+- **M3 — Trust:** TRU-1..TRU-5.
+- **M4 — AI in the loop:** AI-1, AI-2.
+- **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
+- **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
+
+Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M5 deepens the moat.
+
+---
+
+## M1 — Generation reliability
+
+### GEN-1 · `pygo grammar` — constrained decoding
+- **Problem:** an LLM with free decoding emits invalid syntax; every syntax error
+  costs turns and tokens.
+- **Design:** emit the language grammar in machine formats (`gbnf` for
+  llama.cpp/vLLM, `json-schema`, `ebnf`) generated from the lexer/parser so it
+  cannot drift. `pygo grammar --format gbnf --include stdlib`.
+- **Touchpoints:** `internal/lexer`, `internal/parser`, `cmd/pygo`.
+- **Acceptance:** `pygo grammar --format gbnf` output loads in llama.cpp and
+  makes a sample completion syntactically valid; CI checks grammar/parser parity
+  on a corpus.
+- **Metric:** syntax-error rate per completion (~0), turns-to-green.
+- **Effort:** S. **Deps:** none. **Risk:** grammars for format specs/interpolation.
+
+### GEN-2 · Context compiler `pygo guide --task ... --budget N`
+- **Problem:** the model wastes context on irrelevant stdlib and loses the middle.
+- **Design:** rank signatures/sections by the task description and a symbol
+  retrieval over `internal/sig/std/*.pg` + `guide.md`; emit a minimal digest with
+  token accounting.
+- **Touchpoints:** `internal/guide`, `internal/sig`, `cmd/pygo`.
+- **Acceptance:** for a fixed task set, the digest is ≤ budget and still contains
+  every signature the solution needs (checked by compiling solutions).
+- **Metric:** tokens per successful task; missing-symbol rate.
+- **Effort:** M. **Deps:** none.
+
+### GEN-3 · `pygo plan` typed skeletons with holes
+- **Problem:** going from a goal to a first correct decomposition is the costliest
+  model step.
+- **Design:** declare `todo`/`hole` placeholders that the checker accepts and
+  tracks; `pygo plan` emits a typed skeleton; `pygo fill` proposes bodies.
+- **Touchpoints:** `internal/parser`, `internal/check`, `internal/ast`.
+- **Acceptance:** a skeleton with holes type-checks, holes are listed in
+  `--json`, and filling them in any order keeps diagnostics bounded.
+- **Effort:** M. **Deps:** none.
+
+---
+
+## M2 — Repair loop
+
+### REP-1 · Multi-fix and confidence in `check --json`
+- **Problem:** one diagnostic = one manual edit; some fixes interact.
+- **Design:** group diagnostics into a minimal patch set; add `confidence` and
+  `alternatives`; `pygo fix` applies the highest-confidence non-conflicting set.
+- **Touchpoints:** `internal/check`, `internal/diag`, `cmd/pygo/tools.go`.
+- **Acceptance:** applying a patch set reduces the error count and never
+  introduces a new `E`; idempotent after one pass.
+- **Effort:** M. **Deps:** none.
+
+### REP-2 · Counterexample in `explain`/diagnostics
+- **Problem:** codes are clear, but the model still needs a minimal repro.
+- **Design:** each diagnostic optionally carries `example` (wrong → fixed) and a
+  minimized program; `pygo explain --json` already exists, extend it.
+- **Touchpoints:** `internal/diag/explain.go`.
+- **Acceptance:** every `E/W` code has wrong/right examples; a test enforces it.
+- **Effort:** S. **Deps:** none.
+
+### REP-3 · Semantic patch / AST-first editing
+- **Problem:** line diffs drift and break on regeneration.
+- **Design:** stable symbol IDs (extend `outline` hashes), JSON patch over the
+  AST, `pygo patch --check` (apply-or-fail atomically), `--expect-hash` already
+  exists for `edit`.
+- **Touchpoints:** `internal/ast/json.go`, `cmd/pygo/tools.go`.
+- **Acceptance:** a patch applies or fails cleanly; round-trip
+  source→AST→patch→AST is stable; `fmt` output unchanged.
+- **Effort:** M. **Deps:** none.
+
+### REP-4 · Verified repair search
+- **Problem:** some errors need a search, not a single template.
+- **Design:** beam over fix templates; each candidate is scored by
+  `check` + `test`; only strictly-better candidates are surfaced.
+- **Touchpoints:** `internal/check`, `internal/interp` (tests), `cmd/pygo`.
+- **Acceptance:** on a seeded bug corpus, ≥X% fixed automatically with no test
+  regression and a bounded step budget.
+- **Effort:** L. **Deps:** REP-1, SYN-1.
+
+---
+
+## M3 — Execution trust
+
+### TRU-1 · Proof-carrying `.pgc`
+- **Problem:** running generated bytecode still trusts the compiler blindly.
+- **Design:** embed a manifest in `.pgc`: capability set, declared effects,
+  budgets, and a hash of the checker verdict; a verifier refuses to run a `.pgc`
+  whose manifest is missing or inconsistent.
+- **Touchpoints:** `internal/interp/pgc.go`, `cmd/pygo/bytecode.go`, `deploy/`.
+- **Acceptance:** tampering with bytecode/caps is detected; the K8s sandbox
+  verifies before executing.
+- **Effort:** M. **Deps:** none.
+
+### TRU-2 · Budget/resource types
+- **Problem:** step/time/memory/token limits are external flags today.
+- **Design:** make budgets composable values (`Budget{steps, wall, net_bytes,
+  tokens}`) declared on `main` and checked so callees cannot exceed the parent's
+  remaining budget.
+- **Touchpoints:** `internal/check`, `internal/interp`, `internal/sig`.
+- **Acceptance:** a program exceeding a declared budget is rejected statically
+  where provable, and deterministically at runtime otherwise.
+- **Effort:** L. **Deps:** TRU-3.
+
+### TRU-3 · No-crash static analysis (deadlock, depth, unbounded blocking)
+- **Problem:** H1/H2 are runtime panics; we want them proven.
+- **Design:** analyze call graphs and blocking primitives: flag statically
+  reachable unbounded recursion and channel/task waits with no possible sender;
+  suggest loops, budgets, or `--timeout`.
+- **Touchpoints:** `internal/check`.
+- **Acceptance:** the F1/F2 reproducers are caught at `check` time with a fix
+  hint; false-positive budget kept in tests.
+- **Effort:** L. **Deps:** none.
+
+### TRU-4 · Taint / provenance types
+- **Problem:** untrusted input (`env/net/fs/llm`) can reach `Str` sinks.
+- **Design:** generalize the `Html` guarantee: `@untrusted` flows from
+  effect sources; the checker requires `declassify` before a `Str` reaches
+  command/path/HTML/shell sinks. Capabilities already gate the sources.
+- **Touchpoints:** `internal/check`, `internal/sig/sig.go`, `internal/safehtml`.
+- **Acceptance:** an injection reproducer fails at `check`; declassify is
+  explicit and auditable in `--json`.
+- **Effort:** L. **Deps:** TRU-2 (budgets are a natural sibling).
+
+### TRU-5 · `pygo fuzz` differential oracle in CI
+- **Problem:** engine divergence silently breaks the trust model.
+- **Design:** productize the manual collaudo: generate programs from a grammar
+  and from mutations, run `tree`/`vm`/`pgc`, compare output/status/trace/steps,
+  shrink the first divergence, and open a test case.
+- **Touchpoints:** `internal/interp`, `cmd/pygo`, `.github/workflows/ci.yml`.
+- **Acceptance:** CI fails on any divergence; the F1/F2 cases are permanent
+  fixtures; runtime bounded.
+- **Effort:** M. **Deps:** none.
+
+---
+
+## M4 — AI in the loop
+
+### AI-1 · `extern llm` + typed `prompt"..."` literals
+- **Problem:** calling a model from code is untyped, uncached, unbudgeted.
+- **Design:** a new capability `llm`; `prompt"..."` with a declared output
+  schema checked like any type; results validated, cached by content hash, and
+  replayable; `uses llm` composes with TRU-2 budgets (tokens).
+- **Touchpoints:** `internal/sig/sig.go` (capability set), new `internal/llm`,
+  `internal/check`, `internal/interp`.
+- **Acceptance:** a typed prompt call round-trips with the cache; a schema
+  mismatch is a handled failure; token budget enforced.
+- **Effort:** L. **Deps:** RT-3 (replay), TRU-2.
+
+### AI-2 · `embed`/vector + deterministic store
+- **Problem:** semantic retrieval inside programs is ad-hoc.
+- **Design:** a `Vector` type and a store with seedable, replayable similarity
+  ops; integrate with `math`/`rand` determinism.
+- **Touchpoints:** `internal/sig/std`, `internal/interp`.
+- **Acceptance:** same input+seed → same ranking across engines.
+- **Effort:** M. **Deps:** AI-1.
+
+---
+
+## M5 — Scale & interop
+
+### Runtime
+- **RT-1 Deterministic scheduler:** virtual time and a fixed channel order so
+  concurrent runs are reproducible across engines. (L)
+- **RT-2 Checkpoint/fork/time-travel VM:** snapshot state, branch, compare. (L, research)
+- **RT-3 Record/replay effects:** capture `clock/env/fs/net/rand/llm` and replay
+  (already in the public roadmap). (M)
+- **RT-4 Hot-patch `.pgc`:** adopt a replacement function only if `check`+`test`
+  pass (self-healing). (L, research)
+- **RT-5 Content-addressable cache + bytecode delta:** hash-keyed build cache,
+  binary deltas for cheap shipping. (M)
+- **RT-6 `select` + structured concurrency + deadlines:** channels with
+  cancellation/deadlines, aligned with TRU-2. (M)
+- **RT-7 Capability attenuation/delegation:** pass a reduced capability set to
+  `spawn`, including across processes. (M)
+
+### Interop
+- **INT-1 `extern openapi|jsonschema|sql|wasm`:** generate typed bindings like
+  `extern python` does today. (L)
+- **INT-2 Package manager + provenance + capability manifest:** reproducible
+  installs, per-package capabilities. (L)
+- **INT-3 WASM backend:** the public roadmap target; enables edge/browser agents. (L)
+
+### Agent tooling
+- **AGT-1 MCP server:** expose every subcommand (already ~MCP-shaped JSON) as
+  typed tools; formalize `integrations/`. (S)
+- **AGT-2 `pygo ask "goal"`:** one command running plan→edit→check→test→fix. (M)
+- **AGT-3 `pygo repo`:** semantic graph (functions, effects, capabilities, call
+  graph) for context and impact analysis. (M)
+- **AGT-4 `pygo check --watch --json`:** streaming deltas for write→fix loops. (S)
+- **AGT-5 Versioned JSON protocol:** publish a schema for all `--json` outputs;
+  CI validates it. (S)
+
+### Synthesis
+- **SYN-1 Property-based `property "..."` + auto-fuzz/shrink:** (M)
+- **SYN-2 `pygo dream`:** synthesize function bodies from `describe`+`test`. (L, research)
+- **SYN-3 Contracts from examples:** infer `requires/ensures` from `test` (and
+  generate tests from contracts). (M, research)
+
+### Research
+- **AI-3 Confidence/probability type** with checked propagation. (research)
+
+---
+
+## Sequencing and ROI
+
+| Wave | Items | Unlocks |
+|------|-------|---------|
+| 1 | GEN-1, REP-1, REP-2, TRU-5 | Cheaper, more reliable single-file generation |
+| 2 | GEN-2, GEN-3, REP-3, TRU-1 | Robust multi-turn agent edits, verifiable artifacts |
+| 3 | TRU-2, TRU-3, TRU-4 | Unattended execution of untrusted code |
+| 4 | AI-1, RT-3, AGT-1..5 | Model-in-the-loop as a typed, replayable effect |
+| 5 | RT-1, RT-5, INT-1, INT-2, SYN-1..3 | Ecosystem and scale |
+| 6 | RT-2, RT-4, AI-2, AI-3, INT-3 | Moonshots |
+
+## Measurement
+
+Track per release, on a fixed task corpus:
+- **Generation:** syntax-error rate, first-try compile rate, turns to green.
+- **Repair:** tokens and turns per fixed error; auto-fix rate; regression rate.
+- **Trust:** share of runs with no capability violation, no Go-fatal, verified
+  `.pgc`; fuzz divergences found.
+- **Cost:** tokens/latency/CPU per solved task.
+
+## Principles
+
+- A guarantee a human must remember is not a guarantee: move it into `check`.
+- Every output is JSON with stable codes; anything not machine-readable is a bug.
+- If it is not deterministic under a seed, it cannot be debugged or cached.
+- New syntax is the last resort; new *guarantees* are the product.

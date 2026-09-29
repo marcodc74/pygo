@@ -69,7 +69,10 @@ Both engines produce, for every program:
 - the same failure;
 - the **same number of steps**: `STEP` is emitted exactly where the
   interpreter counts a step (each statement, each loop iteration), so
-  `--max-steps` stops both at the same statement.
+  `--max-steps` stops both at the same statement;
+- the **same call-depth limit**: too-deep recursion fails with `R0018` on
+  both engines (and in a built executable) instead of overflowing the host
+  stack.
 
 The test suite checks this on every test program and example. Each one
 runs three ways: on the interpreter, on the VM, and on the VM from a

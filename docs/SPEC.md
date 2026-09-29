@@ -278,6 +278,11 @@ There are two kinds of error.
   and a JSON-serializable report containing the code (R00xx), the
   position, a hint, the values of the variables involved and the stack
   trace.
+- **Limits.** `--max-steps` (R0011) and `--timeout` (R0012) abort with a
+  panic. Very deep recursion trips a call-depth limit (R0018) instead of
+  overflowing the host stack, so a program can never crash the runtime.
+  A channel or task await is bounded by `--timeout`; with no `--timeout`
+  it waits indefinitely.
 
 ## 8. Effects (capabilities)
 
@@ -368,6 +373,10 @@ must be covered by unguarded arms, or there must be a final catch-all
 
 Exit codes: 0 ok · 1 unhandled failure · 2 panic · 3 compile errors
 (including an invalid `.pgc` file, `E0910`) · 4 capability denied.
+
+Every command accepts `--json`; `describe` and `outline` always print JSON,
+so `--json` is a no-op for them. `fix --dry-run --json` prints the fixed
+source to stderr and the JSON summary to stdout.
 
 Diagnostic code ranges:
 

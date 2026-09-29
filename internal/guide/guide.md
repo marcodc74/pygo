@@ -40,6 +40,7 @@ fn first[T](xs: List[T]) -> T? => xs.first()
   - `let v = try f()` propagates (the current function must be `-> !T`).
   - `let v = f() catch e { default_value }` handles it; `e.message`, `e.code`, `e.data`. The catch block may `return`/`fail`.
 - Bugs (index out of range, missing key with `m[k]`, division by zero, overflow, failed assert/contract) are panics: not catchable, exit code 2.
+- Limits: `--max-steps`/`--timeout` abort with panics `R0011`/`R0012`; too-deep recursion is `R0018`. A channel/task await blocks until its peer, so pass `--timeout` to bound it.
 
 ## Structs, enums, match
 ```

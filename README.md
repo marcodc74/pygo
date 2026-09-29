@@ -31,7 +31,7 @@ Ogni scelta di progetto risponde a un limite concreto degli LLM.
 | Dimentica i `nil` | `nil` esiste solo nei tipi `T?`; usare un `T?` senza controllarlo è un errore (`E0310`), con narrowing su `if x != nil` |
 | Codice generato = codice non fidato | Gli effetti sono capability (`uses fs, net`) verificate staticamente e a runtime; di default è tutto negato e si abilita con `--allow` |
 | Costruisce HTML concatenando stringhe (XSS) | Il markup ha un tipo proprio, `Html`, che si scrive solo con `html"..."`: ogni `${x}` viene escapato secondo il contesto (testo, attributo, URL, script). Una `Str` non diventa mai `Html` (`E0301`, con correzione automatica) |
-| Cicli infiniti durante i tentativi | `--max-steps` (budget deterministico) e `--timeout` |
+| Cicli infiniti e attese bloccanti durante i tentativi | `--max-steps` (budget deterministico) e `--timeout` (ferma anche i blocchi su canali/task); ricorsione troppo profonda → panico `R0018`, mai un crash |
 | Lavora a cicli scrivi → esegui → correggi | Diagnostica JSON con codici stabili, hint e correzioni applicabili; panic in JSON con i valori delle variabili coinvolte; contratti `requires`/`ensures`; `test` inline |
 | Errori non riproducibili | Mappe ordinate, `rand` con seme, orologio come effetto esplicito, overflow degli interi = errore |
 

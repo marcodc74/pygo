@@ -309,7 +309,9 @@ Il codice generato da un modello va trattato come non fidato.
   può toccare file, rete, variabili d'ambiente o processi (exit code 4).
   `pygo_tools` concede solo le capability dichiarate dall'host in `allow_caps`.
 - **Budget e timeout.** `--max-steps` e `--timeout` fermano cicli infiniti
-  e programmi lenti.
+  e programmi lenti; `--timeout` ferma anche un'attesa bloccante su canale
+  o task. La ricorsione troppo profonda termina con il panico `R0018`,
+  senza mandare in crash il processo.
 - **HTML senza XSS per costruzione.** Le pagine si scrivono con `html"..."`
   (tipo `Html`): ogni valore interpolato viene escapato secondo il contesto,
   e il checker rifiuta una `Str` dove serve `Html`. L'unica eccezione è
