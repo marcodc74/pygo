@@ -384,6 +384,7 @@ python integrations/agent.py --provider claude "scrivi un programma Pygo che ...
 
 ## Documentazione
 
+- [`README_AI.md`](README_AI.md): pagina di orientamento per un LLM che scrive o esegue Pygo (il ciclo check→test→run, i comandi, la sicurezza, esempi).
 - [`docs/LLM.md`](docs/LLM.md): come usare Pygo con i vari LLM, dalle chat alle CLI alle API.
 - [`docs/ROADMAP_AI.md`](docs/ROADMAP_AI.md): il piano per un linguaggio AI-native (milestone, ROI, criteri di accettazione).
 - [`docs/SPEC.md`](docs/SPEC.md): specifica completa del linguaggio.
