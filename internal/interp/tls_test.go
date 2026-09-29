@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -378,6 +379,52 @@ fn main() -> ! uses net {
 	}
 	if out != "E_TLS\n" {
 		t.Fatalf("got %q, want a clean E_TLS failure", out)
+	}
+}
+
+// A user struct named Tls, smuggled in through Any, must not be mistaken for
+// http.Tls: struct types are matched by identity, not by name.
+func TestServeTLSTypeIdentity(t *testing.T) {
+	src := `
+import "http"
+
+struct Tls { cert: Str, key: Str }
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() -> ! uses net {
+    let x: Any = Tls{cert: "a.pem", key: "b.pem"}
+    try http.serve("127.0.0.1:0", handler: h, tls: x)
+}
+`
+	_, res := runSrc(t, src, "net")
+	if res.Status != "panic" || res.Panic == nil || res.Panic.Code != PType {
+		t.Fatalf("got %s, want a %s panic", res.Describe(), PType)
+	}
+}
+
+// A connection that opens TCP but never sends a ClientHello (slowloris at the
+// handshake) must not block well-behaved clients.
+func TestServeTLSStalledConnectionDoesNotBlock(t *testing.T) {
+	th := tlsThread(t)
+	dir := t.TempDir()
+	cert, key := filepath.Join(dir, "c.pem"), filepath.Join(dir, "c.key")
+	pool := writeSelfSigned(t, cert, key, 1, time.Now())
+	cfg, err := th.httpTLSConfig(tlsValue(t, th, cert, key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := startTLS(t, cfg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "ok")
+	}))
+	host := strings.TrimSuffix(strings.TrimPrefix(url, "https://"), "/")
+	stall, err := net.Dial("tcp", host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stall.Close()
+	if body, _, _ := httpsGet(t, pool, url); body != "ok" {
+		t.Fatalf("stalled connection blocked a client: body %q", body)
 	}
 }
 

@@ -75,8 +75,9 @@ func (r *certReloader) GetCertificate(*tls.ClientHelloInfo) (*tls.Certificate, e
 // httpTLSConfig validates the http.Tls argument and builds the TLS config.
 // TLS 1.2 is the floor; older clients are refused.
 func (th *Thread) httpTLSConfig(v Value) (*tls.Config, error) {
+	want, _ := th.in.stdModule("http").Types["Tls"].(*StructType)
 	s, ok := v.(*Struct)
-	if !ok || s.T.Name != "Tls" {
+	if !ok || want == nil || s.T != want {
 		return nil, perr(PType, `pass tls: http.Tls{cert: "cert.pem", key: "key.pem"}`,
 			"http.serve: tls must be http.Tls, got %s", TypeName(v))
 	}
