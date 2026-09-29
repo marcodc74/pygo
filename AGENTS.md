@@ -62,6 +62,10 @@ go test -bench . ./internal/interp/  # engine benchmarks on bench/*.pg
   `2` panic, `3` compile error, `4` capability not granted.
 - Stdlib capabilities are the closed set `clock crypto env fs net proc python rand sql`
   (`internal/sig/sig.go`).
+- Documentation is part of the change, not a follow-up: in the **same PR** update
+  `internal/guide/guide.md` (then run `make guide` to refresh `docs/GUIDE.md`),
+  `docs/SPEC.md`, `README.md` (Italian), `README_AI.md`, the `docs/ROADMAP_AI.md`
+  status, and `pygo explain`/hint texts when messages change. Stale docs are a bug.
 - README.md is Italian; code, comments, `docs/*.md` and `internal/guide/guide.md`
   are English — don't translate between them.
 - `integrations/AGENTS.md` is a **template** for other projects that *write Pygo*,
