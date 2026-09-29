@@ -126,6 +126,8 @@ fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
 		{"empty version", `print(http.openapi([http.Route{method: "GET", path: "/items", handler: h}], title: "T", version: ""))`},
 		{"duplicate route", `print(http.openapi([http.Route{method: "GET", path: "/x", handler: h}, http.Route{method: "GET", path: "/x", handler: h}], title: "T"))`},
 		{"duplicate operation id", `print(http.openapi([http.Route{method: "GET", path: "/x", handler: h, operation_id: "op"}, http.Route{method: "POST", path: "/y", handler: h, operation_id: "op"}], title: "T"))`},
+		{"equivalent paths, different names", `print(http.openapi([http.Route{method: "GET", path: "/a/{x}", handler: h}, http.Route{method: "GET", path: "/a/{y}", handler: h}], title: "T"))`},
+		{"rest collapses to a parameter", `print(http.openapi([http.Route{method: "GET", path: "/a/{x}", handler: h}, http.Route{method: "GET", path: "/a/{x...}", handler: h}], title: "T"))`},
 		{"not a route", `
     let bad: Any = "nope"
     print(http.openapi([bad], title: "T"))`},
@@ -137,6 +139,25 @@ fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
 				t.Fatalf("got %s, want a %s panic", res.Describe(), PArgs)
 			}
 		})
+	}
+}
+
+// The same literal path with several methods is one path item, not a duplicate.
+func TestOpenAPISamePathDifferentMethods(t *testing.T) {
+	out, res := runSrc(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() {
+    print(http.openapi([http.Route{method: "GET", path: "/x", handler: h}, http.Route{method: "POST", path: "/x", handler: h}], title: "T"))
+}
+`)
+	if res.Status != "ok" {
+		t.Fatalf("status %s: %s", res.Status, res.Describe())
+	}
+	if !strings.Contains(out, `"get"`) || !strings.Contains(out, `"post"`) {
+		t.Fatalf("both methods should share the path item:\n%s", out)
 	}
 }
 

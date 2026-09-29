@@ -593,7 +593,10 @@ described by wrapping it in a named struct). Structs map to objects with
 not required), optionals allow `null`, and enums map to a `oneOf` of
 `{variant, ...fields}` objects, matching `json.decode_as`. The document is
 deterministic, so it can be diffed and served at `/openapi.json`. An invalid
-route, query type or schema is a panic (R0015), like `http.dispatch`.
+route, query type or schema is a panic (R0015), like `http.dispatch`; so are
+two routes that would name the same OpenAPI path (the same hierarchy, even
+when only the parameter names differ, or a final `{name...}` collapsing onto
+a normal `{name}`), because a document may name a path only once.
 
 ### 14.4 SQL (PostgreSQL)
 

@@ -46,6 +46,7 @@ func (th *Thread) httpOpenAPI(routes *List, title, version, description, server 
 	routeType := th.in.stdModule("http").Types["Route"]
 	paths := map[string]any{}
 	seenRoute := map[string]bool{}
+	seenTemplate := map[string]string{}
 	seenOp := map[string]bool{}
 	for _, rv := range routes.Snapshot() {
 		route, ok := rv.(*Struct)
@@ -63,6 +64,14 @@ func (th *Thread) httpOpenAPI(routes *List, title, version, description, server 
 			return nil, perr(PArgs, "remove the duplicate route", "http.openapi: duplicate route %s %s", method, path)
 		}
 		seenRoute[rkey] = true
+		// Two routes may share a path item only if it is literally the same
+		// path (then several methods are fine). Paths that differ only in a
+		// parameter name, or a rest parameter that collapses to a normal one,
+		// are the same OpenAPI path and would be invalid or silently dropped.
+		if prev, ok := seenTemplate[normalizedPath(pat)]; ok && prev != path {
+			return nil, perr(PArgs, "give the routes distinct paths", "http.openapi: routes %q and %q are the same OpenAPI path", prev, path)
+		}
+		seenTemplate[normalizedPath(pat)] = path
 		id := Str(field(route, "operation_id"))
 		if id == "" {
 			id = defaultOperationID(method, path)
@@ -201,6 +210,8 @@ func (b *specBuilder) schemaOfType(te *ast.TypeExpr, mod *Module, depth int) (an
 		return map[string]any{"type": "string"}, nil
 	case "Bool":
 		return map[string]any{"type": "boolean"}, nil
+	case "Nil":
+		return map[string]any{"type": "null"}, nil
 	case "Range", "Chan", "Task", "fn", "Type", "Error":
 		// not JSON data; a free-form schema is the honest answer
 		return map[string]any{}, nil
@@ -338,6 +349,28 @@ func resolveSchemaType(te *ast.TypeExpr, mod *Module) any {
 
 func openapiPath(path string) string {
 	return strings.ReplaceAll(path, "...}", "}")
+}
+
+// normalizedPath renders a compiled route as an OpenAPI path template with the
+// parameter names erased, so /a/{x} and /a/{y} (and /a/{x...}) are recognized
+// as the same path, which OpenAPI forbids to declare twice.
+func normalizedPath(p *routePat) string {
+	var b strings.Builder
+	for i, seg := range p.segs {
+		b.WriteByte('/')
+		if p.names[i] == "" {
+			b.WriteString(seg)
+		} else {
+			b.WriteString("{}")
+		}
+	}
+	if p.rest != "" {
+		b.WriteString("/{}")
+	}
+	if b.Len() == 0 {
+		b.WriteByte('/')
+	}
+	return b.String()
 }
 
 func pathParameter(name string) map[string]any {
