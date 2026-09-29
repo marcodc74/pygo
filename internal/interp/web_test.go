@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marcodc74/pygo/internal/diag"
 	"github.com/marcodc74/pygo/internal/loader"
@@ -209,6 +210,205 @@ fn main() uses fs {
 	}
 	if got := strings.TrimSpace(out); got != "200\n404\n404\n404\n404" {
 		t.Fatalf("got:\n%s", got)
+	}
+}
+
+// runOne runs src on a single engine with separate stdout/stderr buffers.
+// Needed for middlewares that log (timestamps and durations are not stable).
+func runOne(t *testing.T, src, engine string, opt Options) (string, string, *Result) {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "main.pg")
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prog, ds := loader.Load(p, nil)
+	if diag.HasErrors(ds) {
+		t.Fatalf("parse errors: %v", ds)
+	}
+	var out, errb bytes.Buffer
+	opt.Stdout, opt.Stderr, opt.Engine = &out, &errb, engine
+	res := New(prog, opt).Run()
+	return out.String(), errb.String(), res
+}
+
+// Middleware composes left-to-right and may short-circuit without calling next.
+func TestMiddlewareCompose(t *testing.T) {
+	expectOut(t, `
+import "http"
+
+fn tag(name: Str) -> http.Middleware {
+    return http.Middleware{name: name, apply: fn(next) => fn(req) {
+        let r = next(req)
+        return http.text(r.status, body: "${name}(${r.body})")
+    }}
+}
+
+fn guard() -> http.Middleware {
+    return http.Middleware{name: "guard", apply: fn(next) => fn(req) {
+        if req.headers.get("x-token") == nil { return http.text(401, body: "denied") }
+        return next(req)
+    }}
+}
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+fn routes() -> List[http.Route] => [http.Route{method: "GET", path: "/x", handler: h}]
+
+fn call(headers: Map[Str, Str], mw: List[http.Middleware]) -> Str {
+    let r = http.dispatch(http.Request{method: "GET", path: "/x", query: {}, headers: headers, body: ""}, routes: routes(), middleware: mw)
+    return "${r.status} ${r.body}"
+}
+
+fn main() {
+    print(call({}, [tag("a"), tag("b")]))
+    print(call({}, [guard(), tag("a")]))
+    print(call({"x-token": "t"}, [guard(), tag("a")]))
+    print(call({}, []))
+}
+`, `200 a(b(ok))
+401 denied
+200 a(ok)
+200 ok`)
+}
+
+// request_id generates a deterministic per-run id and propagates an incoming one.
+func TestMiddlewareRequestID(t *testing.T) {
+	expectOut(t, `
+import "http"
+
+fn ok(req: http.Request) -> http.Response => http.text(200, body: "id=${req.headers.get("x-request-id") ?? "-"}")
+fn routes() -> List[http.Route] => [http.Route{method: "GET", path: "/x", handler: ok}]
+
+fn call(headers: Map[Str, Str]) -> Str {
+    let r = http.dispatch(http.Request{method: "GET", path: "/x", query: {}, headers: headers, body: ""}, routes: routes(), middleware: [http.request_id()])
+    return "${r.status} ${r.headers["x-request-id"]} ${r.body}"
+}
+
+fn main() {
+    print(call({}))
+    print(call({"x-request-id": "abc"}))
+    print(call({}))
+}
+`, `200 req-1 id=req-1
+200 abc id=abc
+200 req-2 id=req-2`)
+}
+
+// recover answers 500 for a handler panic (a Failure still propagates).
+func TestMiddlewareRecover(t *testing.T) {
+	src := `
+import "http"
+
+fn boom(req: http.Request) -> http.Response { panic("boom") }
+fn routes() -> List[http.Route] => [http.Route{method: "GET", path: "/x", handler: boom}]
+
+fn main() {
+    let r = http.dispatch(http.Request{method: "GET", path: "/x", query: {}, headers: {}, body: ""}, routes: routes(), middleware: [http.recover()])
+    print(r.status, r.body)
+}
+`
+	for _, engine := range []string{"tree", "vm"} {
+		out, errs, res := runOne(t, src, engine, Options{MaxSteps: 1_000_000})
+		if res.Status != "ok" {
+			t.Fatalf("%s: %s", engine, res.Describe())
+		}
+		if strings.TrimSpace(out) != "500 internal server error" {
+			t.Fatalf("%s: got %q", engine, out)
+		}
+		if !strings.Contains(errs, `"msg":"handler panic"`) || !strings.Contains(errs, `"code":"R0013"`) {
+			t.Fatalf("%s: log %q", engine, errs)
+		}
+	}
+}
+
+// log_requests writes one JSON access line per request.
+func TestMiddlewareLogRequests(t *testing.T) {
+	src := `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(201, body: "made")
+
+fn main() {
+    let r = http.dispatch(
+        http.Request{method: "POST", path: "/items", query: {}, headers: {"x-request-id": "abc"}, body: ""},
+        routes: [http.Route{method: "POST", path: "/items", handler: h}],
+        middleware: [http.request_id(), http.log_requests()],
+    )
+    print(r.status)
+}
+`
+	for _, engine := range []string{"tree", "vm"} {
+		out, errs, res := runOne(t, src, engine, Options{MaxSteps: 1_000_000})
+		if res.Status != "ok" {
+			t.Fatalf("%s: %s", engine, res.Describe())
+		}
+		if strings.TrimSpace(out) != "201" {
+			t.Fatalf("%s: got %q", engine, out)
+		}
+		for _, want := range []string{`"msg":"request"`, `"status":"201"`, `"request_id":"abc"`, `"path":"/items"`} {
+			if !strings.Contains(errs, want) {
+				t.Fatalf("%s: log %q lacks %s", engine, errs, want)
+			}
+		}
+	}
+}
+
+// timeout answers 503 when the handler exceeds the deadline.
+func TestMiddlewareTimeout(t *testing.T) {
+	src := `
+import "http"
+
+fn spin(req: http.Request) -> http.Response {
+    var n = 0
+    while true { n = n + 1 }
+    return http.text(200, body: "done")
+}
+
+fn main() {
+    let r = http.dispatch(http.Request{method: "GET", path: "/", query: {}, headers: {}, body: ""}, routes: [http.Route{method: "GET", path: "/", handler: spin}], middleware: [http.timeout(ms: 5)])
+    print(r.status, r.body)
+}
+`
+	dir := t.TempDir()
+	p := filepath.Join(dir, "main.pg")
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prog, ds := loader.Load(p, nil)
+	if diag.HasErrors(ds) {
+		t.Fatalf("parse errors: %v", ds)
+	}
+	var out bytes.Buffer
+	done := make(chan *Result, 1)
+	go func() { done <- New(prog, Options{Stdout: &out, Stderr: &out, Engine: "vm"}).Run() }()
+	select {
+	case res := <-done:
+		if res.Status != "ok" {
+			t.Fatalf("got %s\n%s", res.Describe(), out.String())
+		}
+		if strings.TrimSpace(out.String()) != "503 request timed out" {
+			t.Fatalf("got %q", out.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("request timeout middleware did not fire")
+	}
+}
+
+// A non-Middleware in the list is a runtime PArgs panic.
+func TestMiddlewareRejectsNonMiddleware(t *testing.T) {
+	_, res := runSrc(t, `
+import "http"
+
+fn h(req: http.Request) -> http.Response => http.text(200, body: "ok")
+
+fn main() {
+    let bad: Any = [1, 2]
+    let r = http.dispatch(http.Request{method: "GET", path: "/x", query: {}, headers: {}, body: ""}, routes: [http.Route{method: "GET", path: "/x", handler: h}], middleware: bad)
+    print(r.status)
+}
+`)
+	if res.Status != "panic" || res.Panic.Code != PArgs || !strings.Contains(res.Panic.Message, "middleware must be http.Middleware") {
+		t.Fatalf("got %s", res.Describe())
 	}
 }
 

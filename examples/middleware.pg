@@ -1,0 +1,56 @@
+import "http"
+
+/// Rejects a request whose X-Token header is missing or empty.
+fn require_token() -> http.Middleware {
+    return http.Middleware{name: "auth", apply: fn(next) => fn(req) {
+        if (req.headers.get("x-token") ?? "") == "" {
+            return http.json(401, body: {"error": "missing token"})
+        }
+        return next(req)
+    }}
+}
+
+/// Prefixes the response body with its name (shows the composition order).
+fn mark(name: Str) -> http.Middleware {
+    return http.Middleware{name: name, apply: fn(next) => fn(req) {
+        let res = next(req)
+        return http.text(res.status, body: "${name}:${res.body}")
+    }}
+}
+
+fn routes() -> List[http.Route] {
+    return [
+        http.Route{method: "GET", path: "/secure", handler: fn(req) => http.json(200, body: {"user": "ada"})},
+    ]
+}
+
+fn call(token: Str, mw: List[http.Middleware]) -> http.Response {
+    return http.dispatch(
+        http.Request{method: "GET", path: "/secure", query: {}, headers: {"x-token": token}, body: ""},
+        routes: routes(),
+        middleware: mw,
+    )
+}
+
+fn main() {
+    let ok = call("t", mw: [http.request_id(), mark("m")])
+    print(ok.status, ok.headers["x-request-id"], ok.body)
+    let denied = call("", mw: [require_token(), mark("m")])
+    print(denied.status, denied.body)
+}
+
+test "middleware runs left to right and can short-circuit" {
+    let denied = call("", mw: [require_token(), mark("m")])
+    assert denied.status == 401
+    assert denied.body.contains("missing token")
+    assert not denied.body.contains("m:")
+    let ok = call("t", mw: [mark("a"), mark("b")])
+    assert ok.status == 200
+    assert ok.body == "a:b:{\"user\":\"ada\"}"
+}
+
+test "request_id is echoed on the response" {
+    let r = call("t", mw: [http.request_id()])
+    assert r.status == 200
+    assert r.headers["x-request-id"].starts_with("req-")
+}

@@ -98,6 +98,7 @@ fn main() -> ! uses net, fs { try http.serve(":8080", handler: fn(req) => http.d
 - The FIRST matching route wins; same path with another method → 405, no match → 404. Test handlers by calling them with an `http.Request{...}` literal.
 - Responses: `http.text/json/html(status, body: x)`, `http.redirect("/items")` (303), `http.Response{status: 200, body: b, headers: {...}, cookies: [http.Cookie{name: "s", value: v}]}` (cookies default to HttpOnly, Secure, SameSite=Lax). Request cookies: `req.cookies.get("s")`.
 - Bodies over `max_body` (serve argument, default 1 MiB) get 413.
+- Middleware: `http.dispatch(req, routes: routes(), middleware: [http.request_id(), http.log_requests(), http.recover()])`. Built-ins: `request_id`, `log_requests`, `recover` (panic → 500), `timeout(ms)` (→ 503); a custom one is `http.Middleware{name: "auth", apply: fn(next) => fn(req) { ... }}`. They run left-to-right (first is outermost) and may short-circuit without calling `next`; they also wrap 404/405.
 
 ## Tests
 `test "name" { assert expr, "optional message" }` in any file; `try` is allowed inside tests. Run `pygo test --json file_or_dir`. Failed asserts report operand values.

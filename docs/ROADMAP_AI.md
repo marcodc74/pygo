@@ -40,8 +40,10 @@ Remaining gap: H1/H2 are runtime panics; TRU-3 turns them into static guarantees
 - **M4 — AI in the loop:** AI-1, AI-2.
 - **M5 — Scale & interop:** RT-1..RT-7, INT-1..INT-3, AGT-1..AGT-5, SYN-1..SYN-3.
 - **M6 — Research:** AI-3, RT-2, RT-4, SYN-2.
+- **M7 — Production services:** SRV-1..SRV-8 (SRV-1 shipped; SRV-2 is next).
 
-Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M5 deepens the moat.
+Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M7 makes the result
+deployable; M5 deepens the moat.
 
 ---
 
@@ -245,6 +247,84 @@ Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M5 deepens the moat.
 
 ---
 
+## M7 — Production services
+
+Goal: a generated service can face real traffic with the boring guarantees
+(auth, observability, persistence, integration) without falling back to
+untyped Python. Breadth is delegated through typed interop; the language keeps
+the safety guarantees.
+
+SRV-1 is **shipped**; SRV-2 is open (next) and the rest are queued. Definition
+of done for an open item: signatures in `internal/sig/std/`, a Go
+implementation, entries in `pygo guide` / `pygo explain` where relevant, tests
+on all three engines, and a worked example under `examples/`.
+
+### SRV-1 · Composable middleware  `done`
+- **Problem:** every service re-implements logging, recovery, request ids and
+  timeouts; there is no canonical pipeline, so generated handlers diverge and
+  the missing concerns are invisible in `check`.
+- **Design:** a `http.Middleware` value and a `middleware:` argument on
+  `http.dispatch`. A middleware wraps `fn(Request) -> Response` and may
+  short-circuit. Built-ins: `http.recover()`, `http.log_requests()`,
+  `http.request_id()`, `http.timeout(ms)`. Order is left-to-right; middleware
+  effects compose and are checked like any callback (`uses`).
+- **Touchpoints:** `internal/sig/std/http.pg`, `internal/interp/web.go`,
+  `examples/middleware.pg`.
+- **Shipped:** `struct http.Middleware{name, apply}` and the four built-ins;
+  `dispatch` wraps the outcome (including 404/405); `timeout` uses an R0019
+  per-request deadline checked at step boundaries; `request_id` reuses or
+  generates a reproducible id. Tests: `TestMiddleware*` (compose, request id,
+  recover, access log, timeout, bad value) and `examples/middleware.pg`.
+- **Effort:** M. **Deps:** none.
+
+### SRV-2 · `crypto` + `jwt`  `next`
+- **Problem:** authentication is the first real service need, and today it means
+  `--allow python`, which grants file and network access too.
+- **Design (standard library only, no new module dependency):**
+  - `crypto.sha256(data) -> Str`, `crypto.hmac_sha256(key, data) -> Str`,
+    `crypto.equal(a, b) -> Bool` (constant time), `crypto.pbkdf2(password, salt,
+    iterations, length) -> Str` (PBKDF2-HMAC-SHA256, implemented over `hmac`),
+    `crypto.random_bytes(n) -> !Str uses crypto`.
+  - `jwt.verify_hs256(token, key) -> !Map[Str, Any]`,
+    `jwt.sign_hs256(claims, key) -> !Str`; later RS256 with `crypto/x509` and
+    `encoding/pem`.
+  - New capability `crypto`, added to the closed set in `internal/sig/sig.go`.
+    Hashing, HMAC, `equal` and JWT verification are pure; only randomness is an
+    effect, and it is recorded so RT-3 replay stays deterministic.
+- **Touchpoints:** `internal/sig/std/crypto.pg`, `internal/sig/std/jwt.pg`,
+  `internal/sig/sig.go`, `internal/interp/`, guide and tests.
+- **Acceptance:** RFC test vectors pass for SHA-256, HMAC-SHA256 and PBKDF2;
+  `equal` is constant-time; a tampered JWT fails with a handled error;
+  `uses crypto` is enforced and unknown capabilities are rejected by `check`.
+- **Effort:** L. **Deps:** none.
+
+### SRV-3 · Observability
+- `/metrics` in Prometheus text format and minimal OpenTelemetry spans;
+  readiness/liveness endpoints (the example already has `/healthz`).
+- **Acceptance:** counters for requests, latency histogram, in-flight gauge;
+  spans exported through an OTLP endpoint configured by capability. (M)
+
+### SRV-4 · `extern sql`
+- Typed queries and migrations without `python`: schema-checked parameters and
+  results, capability-scoped connection string. (L)
+
+### SRV-5 · TLS
+- `http.serve(addr, handler, tls: ...)` with a certificate path, or a documented
+  reverse-proxy recipe; certificate reload without restart. (M)
+
+### SRV-6 · OpenAPI
+- Serve a spec generated from `http.Route` and, with INT-1, generate a typed
+  client from a spec. (M)
+
+### SRV-7 · Multipart and streaming
+- `http.multipart(req)` for file uploads; SSE and WebSocket handlers. (M)
+
+### SRV-8 · Queues and streams
+- Typed, capability-scoped `extern redis` / `extern nats` publishers and
+  consumers, so background work does not need `python`. (L)
+
+---
+
 ## Sequencing and ROI
 
 | Wave | Items | Unlocks |
@@ -255,6 +335,8 @@ Order is ROI-driven: M1/M2/M3 unlock safe unattended loops; M5 deepens the moat.
 | 4 | AI-1, RT-3, AGT-1..5 | Model-in-the-loop as a typed, replayable effect |
 | 5 | RT-1, RT-5, INT-1, INT-2, SYN-1..3 | Ecosystem and scale |
 | 6 | RT-2, RT-4, AI-2, AI-3, INT-3 | Moonshots |
+| 7 | SRV-1, SRV-2 | A generated service can authenticate and has a canonical request pipeline |
+| 8 | SRV-3..SRV-8 | Observability, persistence and integration for production |
 
 ## Measurement
 

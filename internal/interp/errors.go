@@ -90,6 +90,7 @@ const (
 	PMatch      = "R0016" // no match arm matched
 	PChan       = "R0017" // channel misuse
 	PDepth      = "R0018" // call stack too deep
+	PReqTimeout = "R0019" // http.timeout middleware deadline exceeded
 	PInternal   = "R0099" // interpreter bug
 )
 

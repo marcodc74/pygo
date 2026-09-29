@@ -107,6 +107,7 @@ var Explanations = map[string]Explanation{
 	"R0016": {Title: "no match arm", Detail: "No arm of a match accepted the value."},
 	"R0017": {Title: "channel misuse", Detail: "Send on a closed channel, or closing twice."},
 	"R0018": {Title: "call stack too deep", Detail: "Recursion exceeded the interpreter's call-depth limit. Rewrite the recursion as a loop or reduce its depth."},
+	"R0019": {Title: "request timed out", Detail: "The http.timeout(ms) middleware deadline was reached while handling a request."},
 	"R0099": {Title: "internal error", Detail: "A bug in the Pygo runtime. Please report it with the program."},
 }
 
